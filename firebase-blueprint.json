@@ -1,0 +1,148 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with role-based access control metadata",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "name": { "type": "string", "maxLength": 128 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "role": { "type": "string", "enum": ["customer", "driver", "admin"] },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "System administrator authorized identity record",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "role": { "type": "string", "enum": ["admin"] },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Trip": {
+      "title": "Trip",
+      "description": "Norwegian taxi trip order document with dispatch and pricing metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "customerName": { "type": "string", "maxLength": 128 },
+        "customerPhone": { "type": "string", "maxLength": 32 },
+        "customerEmail": { "type": "string", "maxLength": 256 },
+        "status": {
+          "type": "string",
+          "enum": [
+            "requested",
+            "searching_driver",
+            "driver_assigned",
+            "driver_arriving",
+            "driver_arrived",
+            "trip_started",
+            "completed",
+            "cancelled"
+          ]
+        },
+        "distanceKm": { "type": "number" },
+        "durationMinutes": { "type": "number" },
+        "estimatedPrice": { "type": "number" },
+        "finalPrice": { "type": "number" },
+        "ratePerKm": { "type": "number" },
+        "startFee": { "type": "number" },
+        "commissionAron": { "type": "number" },
+        "driverPayout": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["vipps", "card", "apple_pay", "cash", "invoice"] },
+        "paymentStatus": { "type": "string", "enum": ["pending", "completed"] },
+        "driverId": { "type": "string", "maxLength": 128 },
+        "driverName": { "type": "string", "maxLength": 128 },
+        "driverPhone": { "type": "string", "maxLength": 32 },
+        "permitNumber": { "type": "string", "maxLength": 64 },
+        "vehicleLicensePlate": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "updatedAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "customerName", "status", "estimatedPrice", "createdAt"]
+    },
+    "Driver": {
+      "title": "Driver",
+      "description": "Aron Taxi registered driver profile and shift state",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "licenseNumber": { "type": "string", "maxLength": 64 },
+        "vehicleId": { "type": "string", "maxLength": 64 },
+        "vehicleName": { "type": "string", "maxLength": 128 },
+        "vehiclePlate": { "type": "string", "maxLength": 32 },
+        "isOnline": { "type": "boolean" },
+        "rating": { "type": "number" },
+        "totalTrips": { "type": "number" },
+        "todayEarnings": { "type": "number" }
+      },
+      "required": ["id", "name", "email", "licenseNumber", "vehiclePlate", "isOnline"]
+    },
+    "PricingConfig": {
+      "title": "PricingConfig",
+      "description": "Taxi tariff and commission rate settings",
+      "type": "object",
+      "properties": {
+        "dayRateKm": { "type": "number" },
+        "nightRateKm": { "type": "number" },
+        "baseStartFee": { "type": "number" },
+        "airportAddition": { "type": "number" },
+        "vatRate": { "type": "number" },
+        "commissionRate": { "type": "number" }
+      },
+      "required": ["dayRateKm", "nightRateKm", "baseStartFee"]
+    },
+    "DriverExpense": {
+      "title": "DriverExpense",
+      "description": "Operational expenses logged by driver or admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "driverId": { "type": "string", "maxLength": 128 },
+        "category": { "type": "string", "enum": ["charging", "toll", "wash", "maintenance", "other"] },
+        "amount": { "type": "number" },
+        "description": { "type": "string", "maxLength": 256 },
+        "date": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "driverId", "category", "amount", "date"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile with role"
+    },
+    "/admins/{adminId}": {
+      "schema": "AdminRecord",
+      "description": "Whitelisted administrator accounts"
+    },
+    "/trips/{tripId}": {
+      "schema": "Trip",
+      "description": "Taxi ride bookings and dispatch queue"
+    },
+    "/drivers/{driverId}": {
+      "schema": "Driver",
+      "description": "Fleet drivers and availability"
+    },
+    "/pricing/{configId}": {
+      "schema": "PricingConfig",
+      "description": "Tariffs and rate configurations"
+    },
+    "/expenses/{expenseId}": {
+      "schema": "DriverExpense",
+      "description": "Driver expense reports"
+    }
+  }
+}

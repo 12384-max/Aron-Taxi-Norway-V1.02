@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global allow rule for Aron Taxi operational database
+    match /{document=**} {
+      allow read, write: if true;
+    }
+
+    // Explicit collections
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    match /admins/{adminId} {
+      allow read, write: if true;
+    }
+
+    match /trips/{tripId} {
+      allow read, write: if true;
+    }
+
+    match /drivers/{driverId} {
+      allow read, write: if true;
+    }
+
+    match /pricing/{configId} {
+      allow read, write: if true;
+    }
+
+    match /vehicles/{vehicleId} {
+      allow read, write: if true;
+    }
+
+    match /expenses/{expenseId} {
+      allow read, write: if true;
+    }
+
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

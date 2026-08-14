@@ -1,0 +1,6 @@
+{
+  "name": "Aron Taxi Norway",
+  "description": "Ekte produksjonsklar taxi-plattform for Aron Taxi Norway i Oslo med sanntids dispatch og administrasjon.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
