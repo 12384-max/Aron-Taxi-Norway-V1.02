@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Trip, TripStatus, Driver, Vehicle, PricingConfig, DriverExpense, UserProfile } from '../types';
+import { Trip, TripStatus, Driver, Vehicle, PricingConfig, DriverExpense, UserProfile, EmergencyAlert } from '../types';
 import { INITIAL_DRIVERS, INITIAL_VEHICLES, INITIAL_PRICING } from '../constants/assets';
 import { db } from '../services/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, runTransaction, getDoc } from 'firebase/firestore';
@@ -37,11 +37,13 @@ interface TripContextType {
   customers: UserProfile[];
   pricing: PricingConfig;
   expenses: DriverExpense[];
+  emergencyAlerts: EmergencyAlert[];
   
   createTrip: (tripData: Omit<Trip, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => Promise<Trip>;
   getTripById: (id: string) => Trip | undefined;
   assignDriverToTrip: (tripId: string, driverId: string) => void;
   acceptTripAtomic: (tripId: string, driverId: string) => Promise<{ success: boolean; error?: string }>;
+  rejectTrip: (tripId: string, driverId: string) => Promise<void>;
   updateTripStatus: (tripId: string, status: TripStatus, location?: { lat: number; lng: number }) => void;
   toggleDriverOnline: (driverId: string, isOnline: boolean) => void;
   updateDriverLocation: (driverId: string, loc: { lat: number; lng: number; heading?: number; speed?: number }, activeTripId?: string) => void;
@@ -49,6 +51,10 @@ interface TripContextType {
   updatePricingConfig: (newPricing: PricingConfig) => void;
   updatePricing: (newPricing: PricingConfig) => void;
   addExpense: (expense: Omit<DriverExpense, 'id'>) => void;
+  
+  // Emergency & Dispatch
+  triggerEmergencyAlert: (driverId: string, customNotes?: string) => Promise<EmergencyAlert>;
+  resolveEmergencyAlert: (alertId: string, resolvedBy?: string) => Promise<void>;
   
   // Driver Management
   addDriver: (driverData: Omit<Driver, 'id' | 'todayEarnings' | 'weekEarnings' | 'monthEarnings' | 'totalTrips' | 'rating'> & { password?: string }) => Promise<Driver>;
@@ -105,6 +111,11 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [emergencyAlerts, setEmergencyAlerts] = useState<EmergencyAlert[]>(() => {
+    const saved = localStorage.getItem('aron_emergency_alerts');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   // Sync to localStorage and broadcast channel for multi-tab live sync
   const saveTrips = (newTrips: Trip[]) => {
     setTrips(newTrips);
@@ -130,6 +141,12 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     window.dispatchEvent(new Event('aron_customers_updated'));
   };
 
+  const saveEmergencyAlerts = (newAlerts: EmergencyAlert[]) => {
+    setEmergencyAlerts(newAlerts);
+    localStorage.setItem('aron_emergency_alerts', JSON.stringify(newAlerts));
+    window.dispatchEvent(new Event('aron_emergency_updated'));
+  };
+
   useEffect(() => {
     // Listen to window storage events across tabs
     const handleSync = () => {
@@ -144,12 +161,16 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       const savedCustomers = localStorage.getItem('aron_customers');
       if (savedCustomers) setCustomers(JSON.parse(savedCustomers));
+
+      const savedAlerts = localStorage.getItem('aron_emergency_alerts');
+      if (savedAlerts) setEmergencyAlerts(JSON.parse(savedAlerts));
     };
 
     window.addEventListener('aron_trips_updated', handleSync);
     window.addEventListener('aron_drivers_updated', handleSync);
     window.addEventListener('aron_vehicles_updated', handleSync);
     window.addEventListener('aron_customers_updated', handleSync);
+    window.addEventListener('aron_emergency_updated', handleSync);
     window.addEventListener('storage', handleSync);
 
     // Initial first-time seeding ONLY if brand new installation
@@ -176,6 +197,8 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const tripsUnsub = onSnapshot(collection(db, 'trips'), (snapshot) => {
         const fsTrips: Trip[] = [];
         snapshot.forEach((d) => fsTrips.push(d.data() as Trip));
+        // Sort newest first
+        fsTrips.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
         setTrips(fsTrips);
         localStorage.setItem('aron_trips', JSON.stringify(fsTrips));
       }, (err) => console.log('Firestore trip listener note:', err.message));
@@ -204,15 +227,25 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         localStorage.setItem('aron_customers', JSON.stringify(fsUsers));
       }, (err) => console.log('Firestore users listener note:', err.message));
 
+      const alertsUnsub = onSnapshot(collection(db, 'emergency_alerts'), (snapshot) => {
+        const fsAlerts: EmergencyAlert[] = [];
+        snapshot.forEach((d) => fsAlerts.push(d.data() as EmergencyAlert));
+        fsAlerts.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setEmergencyAlerts(fsAlerts);
+        localStorage.setItem('aron_emergency_alerts', JSON.stringify(fsAlerts));
+      }, (err) => console.log('Firestore emergency alert listener note:', err.message));
+
       return () => {
         tripsUnsub();
         driversUnsub();
         vehiclesUnsub();
         usersUnsub();
+        alertsUnsub();
         window.removeEventListener('aron_trips_updated', handleSync);
         window.removeEventListener('aron_drivers_updated', handleSync);
         window.removeEventListener('aron_vehicles_updated', handleSync);
         window.removeEventListener('aron_customers_updated', handleSync);
+        window.removeEventListener('aron_emergency_updated', handleSync);
         window.removeEventListener('storage', handleSync);
       };
     } catch (e) {
@@ -227,7 +260,9 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const newTrip: Trip = {
       ...tripData,
       id,
-      status: 'searching_driver',
+      tripId: id,
+      status: 'pending',
+      rejectedDriverIds: [],
       createdAt: now,
       updatedAt: now
     };
@@ -258,6 +293,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return {
           ...t,
           driverId,
+          assignedDriverId: driverId,
           driverName: targetDriver?.name || 'Aron Sjåfør',
           driverPhone: targetDriver?.phone || '+47 96 99 09 01',
           vehicleId: targetDriver?.vehicleId || targetVehicle?.id || 'v1',
@@ -292,7 +328,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     try {
       const tripRef = doc(db, 'trips', tripId);
-      const result = await runTransaction(db, async (transaction) => {
+      await runTransaction(db, async (transaction) => {
         const tripDoc = await transaction.get(tripRef);
         if (!tripDoc.exists()) {
           throw new Error('Turen eksisterer ikke lenger.');
@@ -303,12 +339,14 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (data.driverId && data.driverId !== driverId) {
           throw new Error('Turen ble nettopp tatt av en annen sjåfør.');
         }
-        if (data.status !== 'requested' && data.status !== 'searching_driver' && data.status !== 'driver_assigned') {
+        const validStatuses: TripStatus[] = ['pending', 'requested', 'searching_driver', 'driver_assigned', 'accepted'];
+        if (!validStatuses.includes(data.status)) {
           throw new Error('Denne turen er ikke lenger tilgjengelig.');
         }
 
         const updates: Partial<Trip> = {
           driverId,
+          assignedDriverId: driverId,
           driverName: targetDriver.name,
           driverPhone: targetDriver.phone,
           vehicleId: targetDriver.vehicleId || targetVehicle?.id || 'v1',
@@ -330,6 +368,79 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (err: any) {
       console.warn('Accept trip transaction failed:', err.message);
       return { success: false, error: err.message || 'Kunne ikke godta turen.' };
+    }
+  };
+
+  // Reject trip for a single driver (adds driverId to rejectedDriverIds)
+  const rejectTrip = async (tripId: string, driverId: string) => {
+    const target = trips.find(t => t.id === tripId);
+    if (!target) return;
+
+    const currentRejected = target.rejectedDriverIds || [];
+    if (!currentRejected.includes(driverId)) {
+      const updatedRejected = [...currentRejected, driverId];
+      const updated = trips.map(t => t.id === tripId ? { ...t, rejectedDriverIds: updatedRejected } : t);
+      saveTrips(updated);
+      try {
+        await setDoc(doc(db, 'trips', tripId), { rejectedDriverIds: updatedRejected }, { merge: true });
+      } catch (err) {
+        console.warn('Reject trip write error:', err);
+      }
+    }
+  };
+
+  // Emergency Alert Trigger from Driver App
+  const triggerEmergencyAlert = async (driverId: string, customNotes?: string): Promise<EmergencyAlert> => {
+    const targetDriver = drivers.find(d => d.id === driverId);
+    const targetVehicle = vehicles.find(v => v.id === targetDriver?.vehicleId);
+    const active = trips.find(t => t.driverId === driverId && t.status !== 'completed' && t.status !== 'cancelled');
+
+    const id = `EMG-${Date.now().toString().slice(-6)}`;
+    const now = new Date().toISOString();
+
+    const newAlert: EmergencyAlert = {
+      id,
+      driverId,
+      driverName: targetDriver?.name || 'Aron Sjåfør',
+      driverPhone: targetDriver?.phone || '+47 96 99 09 01',
+      vehiclePlate: targetDriver?.vehiclePlate || targetVehicle?.licensePlate || 'Ukjent bil',
+      vehicleModel: targetDriver?.vehicleName || targetVehicle?.model || 'Tesla Model Y',
+      permitNumber: targetDriver?.permitNumber || targetVehicle?.permitNumber || 'OS 10597',
+      location: targetDriver?.currentLocation,
+      activeTripId: active?.id,
+      tripDetails: active ? {
+        customerName: active.customerName,
+        customerPhone: active.customerPhone,
+        pickup: active.pickup?.address,
+        destination: active.destination?.address,
+        price: active.estimatedPrice
+      } : undefined,
+      notes: customNotes || 'Nødsituasjonsvarsel / taus alarm utløst fra sjåførkonsoll',
+      status: 'active',
+      createdAt: now
+    };
+
+    const updated = [newAlert, ...emergencyAlerts];
+    saveEmergencyAlerts(updated);
+
+    try {
+      await setDoc(doc(db, 'emergency_alerts', id), newAlert, { merge: true });
+    } catch (err) {
+      console.warn('Emergency alert firestore write note:', err);
+    }
+
+    return newAlert;
+  };
+
+  const resolveEmergencyAlert = async (alertId: string, resolvedBy: string = 'Sentral / Dispatch') => {
+    const now = new Date().toISOString();
+    const updated = emergencyAlerts.map(a => a.id === alertId ? { ...a, status: 'resolved' as const, resolvedAt: now, resolvedBy } : a);
+    saveEmergencyAlerts(updated);
+
+    try {
+      await setDoc(doc(db, 'emergency_alerts', alertId), { status: 'resolved', resolvedAt: now, resolvedBy }, { merge: true });
+    } catch (err) {
+      console.warn('Resolve emergency alert error:', err);
     }
   };
 
@@ -841,10 +952,12 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         customers,
         pricing,
         expenses,
+        emergencyAlerts,
         createTrip,
         getTripById,
         assignDriverToTrip,
         acceptTripAtomic,
+        rejectTrip,
         updateTripStatus,
         toggleDriverOnline,
         updateDriverLocation,
@@ -852,6 +965,8 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         updatePricingConfig,
         updatePricing: updatePricingConfig,
         addExpense,
+        triggerEmergencyAlert,
+        resolveEmergencyAlert,
         addDriver,
         updateDriver,
         deleteDriver,

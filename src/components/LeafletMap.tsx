@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
+import { Locate, Compass } from 'lucide-react';
 
 interface HotspotItem {
   id: string;
@@ -22,6 +23,7 @@ interface LeafletMapProps {
   className?: string;
   zoom?: number;
   onMapClick?: (lat: number, lng: number) => void;
+  showRecenterButton?: boolean;
 }
 
 export const LeafletMap: React.FC<LeafletMapProps> = ({
@@ -33,23 +35,31 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   showHotspots = false,
   centerLat,
   centerLng,
-  className = 'h-64 sm:h-80 w-full rounded-xl overflow-hidden shadow-xl border border-stone-800/80',
+  className = 'h-64 sm:h-80 w-full rounded-xl overflow-hidden shadow-xl border border-stone-800/80 relative',
   zoom = 13,
-  onMapClick
+  onMapClick,
+  showRecenterButton = true
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerGroupRef = useRef<L.LayerGroup | null>(null);
+  const initialViewSetRef = useRef<boolean>(false);
+  const lastRouteKeyRef = useRef<string>('');
 
+  // Generate a key representing the current route or trip focus
+  const currentRouteKey = `${pickup?.lat || 0},${pickup?.lng || 0}-${destination?.lat || 0},${destination?.lng || 0}-${routeGeometry?.length || 0}`;
+
+  // 1. Initialize Map Instance once
   useEffect(() => {
     if (!mapContainerRef.current) return;
 
-    // Initialize Leaflet map if not already created
     if (!mapRef.current) {
       const defaultCenter: [number, number] = centerLat && centerLng
         ? [centerLat, centerLng]
         : pickup
         ? [pickup.lat, pickup.lng]
+        : driverLocation
+        ? [driverLocation.lat, driverLocation.lng]
         : [59.9139, 10.7522]; // Oslo default
 
       const map = L.map(mapContainerRef.current, {
@@ -59,7 +69,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
         attributionControl: false
       });
 
-      // CartoDB Voyager / Dark Matter tile layer for high-end navigation aesthetic
+      // CartoDB Voyager tile layer
       L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         subdomains: 'abcd'
@@ -78,9 +88,15 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
       layerGroupRef.current = L.layerGroup().addTo(map);
     }
 
+    return () => {
+      // Don't destroy on every re-render, keep instance alive
+    };
+  }, []);
+
+  // 2. Update Layers (Markers, Route, Hotspots) without forcing map viewport jumping
+  useEffect(() => {
     const map = mapRef.current;
     const layerGroup = layerGroupRef.current;
-
     if (!map || !layerGroup) return;
 
     // Clear previous markers & polylines
@@ -169,7 +185,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
         iconAnchor: [20, 20]
       });
       const carMarker = L.marker([driverLocation.lat, driverLocation.lng], { icon: driverIcon }).bindPopup(
-        `<b>Din posisjon (Sjåfør)</b>`
+        `<b>Sjåførposisjon</b>`
       );
       layerGroup.addLayer(carMarker);
       bounds.extend([driverLocation.lat, driverLocation.lng]);
@@ -189,17 +205,60 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
       routeGeometry.forEach(([lat, lng]) => bounds.extend([lat, lng]));
     }
 
-    // Fit map view
-    if (bounds.isValid() && (pickup || destination || (routeGeometry && routeGeometry.length > 0))) {
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+    // ONLY auto-fit view if:
+    // 1. It is the initial render
+    // 2. Or the route/pickup/destination actually changed to a new trip
+    const routeChanged = currentRouteKey !== lastRouteKeyRef.current && (pickup || destination || (routeGeometry && routeGeometry.length > 0));
+    
+    if (!initialViewSetRef.current || routeChanged) {
+      if (bounds.isValid() && (pickup || destination || (routeGeometry && routeGeometry.length > 0))) {
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+      } else if (driverLocation) {
+        map.setView([driverLocation.lat, driverLocation.lng], zoom);
+      } else if (centerLat && centerLng) {
+        map.setView([centerLat, centerLng], zoom);
+      } else {
+        map.setView([59.9139, 10.7522], zoom);
+      }
+      initialViewSetRef.current = true;
+      lastRouteKeyRef.current = currentRouteKey;
+    }
+  }, [pickup, destination, driverLocation, routeGeometry, hotspots, showHotspots, centerLat, centerLng, zoom, currentRouteKey]);
+
+  // Recenter handler
+  const handleRecenter = () => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (pickup && destination) {
+      const b = L.latLngBounds([[pickup.lat, pickup.lng], [destination.lat, destination.lng]]);
+      if (driverLocation) b.extend([driverLocation.lat, driverLocation.lng]);
+      map.fitBounds(b, { padding: [50, 50], maxZoom: 15 });
     } else if (driverLocation) {
-      map.setView([driverLocation.lat, driverLocation.lng], zoom);
+      map.setView([driverLocation.lat, driverLocation.lng], 15);
+    } else if (pickup) {
+      map.setView([pickup.lat, pickup.lng], 15);
     } else if (centerLat && centerLng) {
       map.setView([centerLat, centerLng], zoom);
     } else {
-      map.setView([59.9139, 10.7522], zoom);
+      map.setView([59.9139, 10.7522], 13);
     }
-  }, [pickup, destination, driverLocation, routeGeometry, hotspots, showHotspots, centerLat, centerLng, zoom]);
+  };
 
-  return <div ref={mapContainerRef} className={className} />;
+  return (
+    <div className={className}>
+      <div ref={mapContainerRef} className="w-full h-full" />
+      {showRecenterButton && (
+        <button
+          type="button"
+          onClick={handleRecenter}
+          title="Sentrér kart på min posisjon"
+          className="absolute bottom-4 right-4 z-[500] p-2.5 bg-[#0F172A]/90 hover:bg-[#1E293B] text-[#34D186] border border-white/20 rounded-xl shadow-2xl backdrop-blur-md transition-all active:scale-95 flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+        >
+          <Locate className="w-4 h-4 text-[#34D186]" />
+          <span className="hidden xs:inline">Sentrér</span>
+        </button>
+      )}
+    </div>
+  );
 };

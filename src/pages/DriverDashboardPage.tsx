@@ -19,6 +19,7 @@ import {
   DollarSign,
   Percent,
   ShieldCheck,
+  ShieldAlert,
   AlertCircle,
   Check,
   Menu,
@@ -45,7 +46,8 @@ import {
   AlertTriangle,
   RotateCcw,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Radio
 } from 'lucide-react';
 
 // Demand Hotspots in Oslo region with surge multipliers
@@ -70,8 +72,11 @@ export const DriverDashboardPage: React.FC = () => {
     updateDriverLocation,
     selectDriverVehicle,
     acceptTripAtomic,
+    rejectTrip,
     updateTripStatus,
-    addTipAndRatingToTrip
+    addTipAndRatingToTrip,
+    triggerEmergencyAlert,
+    emergencyAlerts
   } = useTrips();
 
   // Find driver object in real Firestore collection
@@ -85,6 +90,9 @@ export const DriverDashboardPage: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [autoAccept, setAutoAccept] = useState(false);
   const [showHotspots, setShowHotspots] = useState(true);
+  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+  const [emergencySending, setEmergencySending] = useState(false);
+  const [emergencySuccessMessage, setEmergencySuccessMessage] = useState<string | null>(null);
 
   // Incoming ride request countdown timer (15 seconds)
   const [incomingCountdown, setIncomingCountdown] = useState(15);
@@ -100,19 +108,31 @@ export const DriverDashboardPage: React.FC = () => {
   // Sound notification tracker
   const prevPendingCount = useRef<number>(0);
 
-  // Incoming pending trips waiting for assignment in Oslo
+  // Incoming pending trips waiting for assignment in Oslo (filtered for unassigned and not rejected by this driver)
   const pendingTrips = trips.filter(
-    (t) => (t.status === 'requested' || t.status === 'searching_driver') && !t.driverId
+    (t) =>
+      (t.status === 'pending' || t.status === 'requested' || t.status === 'searching_driver') &&
+      !t.driverId &&
+      (!t.rejectedDriverIds || !t.rejectedDriverIds.includes(currentDriver?.id || ''))
   );
 
   // Active trip assigned to this driver
   const activeTrip = trips.find(
-    (t) => t.driverId === currentDriver?.id && t.status !== 'completed' && t.status !== 'cancelled'
+    (t) =>
+      (t.driverId === currentDriver?.id || t.assignedDriverId === currentDriver?.id) &&
+      t.status !== 'completed' &&
+      t.status !== 'cancelled' &&
+      t.status !== 'rejected'
   );
 
   // Completed trips by this driver
   const myCompletedTrips = trips.filter(
     (t) => t.driverId === currentDriver?.id && t.status === 'completed'
+  );
+
+  // Check if this driver has an active emergency alert
+  const myActiveAlert = emergencyAlerts.find(
+    (a) => a.driverId === currentDriver?.id && a.status === 'active'
   );
 
   // Sound chime when new trip arrives and driver is ONLINE
@@ -398,6 +418,35 @@ export const DriverDashboardPage: React.FC = () => {
     toast.success('Turen er fullført! Oppgjør er overført.');
   };
 
+  const handleRejectTrip = async (tripId: string) => {
+    if (currentDriver) {
+      await rejectTrip(tripId, currentDriver.id);
+      toast.info('Turforespørsel avvist.');
+    }
+  };
+
+  const handleTriggerEmergency = async (reason?: string) => {
+    if (!currentDriver?.id) return;
+    setEmergencySending(true);
+    try {
+      await triggerEmergencyAlert(
+        currentDriver.id,
+        reason || 'Taus nødvarsel utløst fra sjåførkonsoll'
+      );
+      setEmergencySuccessMessage('Taus nødvarsel sendt til sentralen. Sanntids GPS-posisjon og turdetaljer deles.');
+      toast.error('🚨 Nødvarsel aktivert: Sentralen er varslet!', {
+        description: 'Din nøyaktige posisjon og turdetaljer spores nå i sanntid av sentralen.'
+      });
+      setTimeout(() => {
+        setShowEmergencyModal(false);
+        setEmergencySending(false);
+      }, 1500);
+    } catch (err: any) {
+      toast.error('Kunne ikke sende nødvarsel. Ring 112 om det er akutt fare.');
+      setEmergencySending(false);
+    }
+  };
+
   // Launch external GPS navigation (Google Maps / Waze / Apple Maps)
   const openExternalNavigation = (destAddress: string, lat?: number, lng?: number) => {
     const query = lat && lng ? `${lat},${lng}` : encodeURIComponent(destAddress);
@@ -458,8 +507,23 @@ export const DriverDashboardPage: React.FC = () => {
           <span className="text-[10px] text-slate-400 font-normal hidden sm:inline">• {myCompletedTrips.length} turer</span>
         </button>
 
-        {/* RIGHT: ONLINE / OFFLINE TOGGLE BUTTON */}
+        {/* RIGHT: EMERGENCY SOS, SOUND, ONLINE/OFFLINE */}
         <div className="flex items-center gap-2">
+          
+          {/* QUICK-ACCESS EMERGENCY SOS BUTTON */}
+          <button
+            onClick={() => setShowEmergencyModal(true)}
+            className={`px-3 py-2 rounded-2xl border font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md cursor-pointer ${
+              myActiveAlert
+                ? 'bg-rose-600 text-white border-rose-400 animate-pulse ring-2 ring-rose-500/50'
+                : 'bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/40 text-rose-300'
+            }`}
+            title="Nødvarsel / Taus alarm til sentralen"
+          >
+            <ShieldAlert className="w-4 h-4 text-rose-400" />
+            <span className="font-black text-[11px]">SOS</span>
+          </button>
+
           <button
             onClick={() => {
               const next = !soundEnabled;
@@ -615,6 +679,19 @@ export const DriverDashboardPage: React.FC = () => {
             {/* FLOATING QUICK CONTROLS (TOP RIGHT ON MAP) */}
             <div className="absolute top-4 right-4 z-20 flex flex-col gap-2">
               
+              {/* QUICK-ACCESS EMERGENCY SOS BUTTON */}
+              <button
+                onClick={() => setShowEmergencyModal(true)}
+                className={`p-3 rounded-2xl border shadow-2xl backdrop-blur-md transition-all cursor-pointer ${
+                  myActiveAlert
+                    ? 'bg-rose-600 text-white border-rose-400 animate-pulse ring-4 ring-rose-500/40'
+                    : 'bg-rose-500/20 hover:bg-rose-500/30 border-rose-500/40 text-rose-400'
+                }`}
+                title="Send Nødvarsel / SOS til Sentralen"
+              >
+                <ShieldAlert className="w-5 h-5 text-rose-400" />
+              </button>
+
               {/* HOTSPOTS TOGGLE */}
               <button
                 onClick={() => setShowHotspots(!showHotspots)}
@@ -910,9 +987,7 @@ export const DriverDashboardPage: React.FC = () => {
                         GODTA TUR
                       </button>
                       <button
-                        onClick={() => {
-                          toast.info('Turforespørsel avvist.');
-                        }}
+                        onClick={() => handleRejectTrip(pendingTrips[0].id)}
                         className="px-6 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 font-bold text-xs uppercase rounded-2xl cursor-pointer"
                       >
                         Avslå
@@ -1444,6 +1519,101 @@ export const DriverDashboardPage: React.FC = () => {
             >
               Klar for Neste Tur
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* QUICK-ACCESS EMERGENCY SOS / NØDVARSEL MODAL */}
+      {/* ========================================== */}
+      {showEmergencyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-lg animate-fade-in">
+          <div className="bg-[#131B2A] border-2 border-rose-500 rounded-3xl p-6 max-w-md w-full space-y-5 shadow-2xl relative">
+            <button
+              onClick={() => setShowEmergencyModal(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-xl bg-white/5 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 bg-rose-500/20 border-2 border-rose-500 rounded-full flex items-center justify-center mx-auto text-rose-500 animate-pulse">
+                <ShieldAlert className="w-8 h-8" />
+              </div>
+              <h2 className="text-2xl font-black text-white uppercase tracking-wide">
+                Nødvarsel & Sikkerhet
+              </h2>
+              <p className="text-xs text-slate-300">
+                Utløser en taus alarm til Aron Taxi sin sentral med sanntids GPS-posisjon, turdetaljer og passasjerdata.
+              </p>
+            </div>
+
+            {myActiveAlert && (
+              <div className="p-3 bg-rose-500/15 border border-rose-500/40 rounded-2xl flex items-center gap-3 text-rose-300 text-xs">
+                <Radio className="w-5 h-5 text-rose-400 animate-ping shrink-0" />
+                <div>
+                  <span className="font-bold block">🚨 Aktivt nødvarsel registrert</span>
+                  <span className="text-[11px] text-slate-300">Sentralen sporer din bil ({currentDriver.vehiclePlate || 'Drosje'}) i sanntid.</span>
+                </div>
+              </div>
+            )}
+
+            {/* QUICK SILENT DISPATCH TRIGGER */}
+            <div className="space-y-3 pt-2">
+              <button
+                disabled={emergencySending}
+                onClick={() => handleTriggerEmergency('Taus alarm: Sjåfør i potensiell fare')}
+                className="w-full py-4 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
+              >
+                <ShieldAlert className="w-5 h-5" />
+                {emergencySending ? 'Sender nødvarsel...' : 'SEND TAUS ALARM TIL SENTRAL'}
+              </button>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <button
+                  disabled={emergencySending}
+                  onClick={() => handleTriggerEmergency('Kunde urolig / truende oppførsel')}
+                  className="p-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 font-bold rounded-xl text-center cursor-pointer"
+                >
+                  ⚠️ Truende Passasjer
+                </button>
+                <button
+                  disabled={emergencySending}
+                  onClick={() => handleTriggerEmergency('Trafikkulykke / Kollisjon')}
+                  className="p-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 font-bold rounded-xl text-center cursor-pointer"
+                >
+                  🚗 Ulykke / Kollisjon
+                </button>
+              </div>
+
+              {/* POLICE DIRECT CALL */}
+              <div className="pt-2 border-t border-white/10 flex gap-2">
+                <a
+                  href="tel:112"
+                  className="flex-1 py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2"
+                >
+                  <Phone className="w-4 h-4 text-rose-400" />
+                  Ring Politi (112)
+                </a>
+                <a
+                  href="tel:113"
+                  className="flex-1 py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2"
+                >
+                  <Phone className="w-4 h-4 text-emerald-400" />
+                  Ring Medisinsk (113)
+                </a>
+              </div>
+            </div>
+
+            <div className="text-center">
+              <button
+                onClick={() => setShowEmergencyModal(false)}
+                className="text-xs text-slate-400 hover:text-slate-200 font-bold underline cursor-pointer"
+              >
+                Lukk vindu
+              </button>
+            </div>
+
           </div>
         </div>
       )}

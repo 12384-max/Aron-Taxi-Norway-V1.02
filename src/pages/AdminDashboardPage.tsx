@@ -72,7 +72,9 @@ export const AdminDashboardPage: React.FC = () => {
     resetFleetToOfficial,
     addCustomer,
     updateCustomer,
-    deleteCustomer
+    deleteCustomer,
+    emergencyAlerts,
+    resolveEmergencyAlert
   } = useTrips();
 
   const { resetPassword } = useAuth();
@@ -699,6 +701,8 @@ export const AdminDashboardPage: React.FC = () => {
     );
   });
 
+  const activeEmergencyAlerts = emergencyAlerts.filter((a) => a.status === 'active');
+
   return (
     <div className="min-h-screen bg-[#0A0D14] text-[#F5F2ED] flex flex-col relative selection:bg-[#D4AF37] selection:text-black">
       <Header />
@@ -749,6 +753,105 @@ export const AdminDashboardPage: React.FC = () => {
       )}
 
       <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8 max-w-7xl w-full mx-auto space-y-8">
+        
+        {/* ========================================================= */}
+        {/* CRITICAL EMERGENCY MONITOR (DISPATCH SOS ALERT) */}
+        {/* ========================================================= */}
+        {activeEmergencyAlerts.length > 0 && (
+          <div className="bg-rose-950/90 border-2 border-rose-500 rounded-3xl p-6 shadow-2xl backdrop-blur-2xl space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border-2 border-rose-500 flex items-center justify-center text-rose-400 animate-pulse">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 bg-rose-500 text-white rounded-full font-black text-[10px] uppercase">
+                      🚨 AKUTT NØDVARSEL ({activeEmergencyAlerts.length})
+                    </span>
+                    <span className="text-xs text-rose-300 font-bold">Sentralovervåking aktiv</span>
+                  </div>
+                  <h2 className="text-xl font-black text-white mt-1">
+                    Sjåfør har utløst nødvarsel / SOS
+                  </h2>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              {activeEmergencyAlerts.map((alert) => (
+                <div
+                  key={alert.id}
+                  className="bg-black/70 border border-rose-500/50 rounded-2xl p-4 space-y-3"
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-sm font-black text-white flex items-center gap-2">
+                        {alert.driverName}
+                        <span className="text-[10px] font-mono text-slate-300 px-2 py-0.5 bg-white/10 rounded-md">
+                          {alert.vehiclePlate || 'Bil ukjent'}
+                        </span>
+                      </h3>
+                      <p className="text-xs text-rose-300 font-semibold mt-0.5">
+                        {alert.reason || 'Taus alarm utløst fra sjåførkonsoll'}
+                      </p>
+                      <span className="text-[10px] text-slate-400 block mt-1">
+                        Varslet: {new Date(alert.createdAt).toLocaleTimeString('no-NO')}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={async () => {
+                        await resolveEmergencyAlert(alert.id);
+                        showToast(`Nødvarsel for sjåfør ${alert.driverName} er markert som løst.`);
+                      }}
+                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-emerald-400 font-bold text-xs rounded-xl cursor-pointer"
+                    >
+                      Marker Løst
+                    </button>
+                  </div>
+
+                  {alert.location && (
+                    <div className="p-2.5 bg-white/5 rounded-xl text-xs space-y-1">
+                      <span className="text-[10px] text-slate-400 block uppercase font-bold">Sanntidsposisjon:</span>
+                      <p className="text-white font-mono text-[11px]">
+                        Lat: {alert.location.lat?.toFixed(5)}, Lng: {alert.location.lng?.toFixed(5)}
+                      </p>
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${alert.location.lat},${alert.location.lng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[#D4AF37] hover:underline text-[11px] font-bold inline-flex items-center gap-1"
+                      >
+                        <Navigation className="w-3 h-3" />
+                        Åpne GPS-posisjon i kart
+                      </a>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 pt-1">
+                    {alert.driverPhone && (
+                      <a
+                        href={`tel:${alert.driverPhone}`}
+                        className="flex-1 py-2 bg-[#D4AF37] hover:bg-[#C5A028] text-slate-950 font-black text-xs rounded-xl flex items-center justify-center gap-1.5"
+                      >
+                        <Phone className="w-3.5 h-3.5" />
+                        Ring Sjåfør
+                      </a>
+                    )}
+                    <a
+                      href="tel:112"
+                      className="flex-1 py-2 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5" />
+                      Ring Politi (112)
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         
         {/* ADMIN DISPATCH HEADER */}
         <div className="bg-[#121722]/90 border border-white/10 rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 shadow-2xl backdrop-blur-xl">

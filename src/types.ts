@@ -1,12 +1,16 @@
 export type TripStatus =
+  | 'pending'
   | 'requested'
   | 'searching_driver'
+  | 'accepted'
   | 'driver_assigned'
   | 'driver_arriving'
   | 'driver_arrived'
   | 'trip_started'
+  | 'active'
   | 'completed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'rejected';
 
 export type UserRole = 'customer' | 'driver' | 'admin';
 
@@ -36,6 +40,7 @@ export interface LocationPoint {
 
 export interface Trip {
   id: string;
+  tripId?: string;
   guestId?: string;
   customerId?: string;
   customerName: string;
@@ -65,6 +70,7 @@ export interface Trip {
   airportFee?: number;
   tollFee?: number;
   tip?: number;
+  tipAmount?: number;
   commissionAron: number; // 15%
   driverPayout: number;    // 85%
   paymentMethod: 'vipps' | 'card' | 'apple_pay' | 'cash' | 'invoice';
@@ -72,18 +78,44 @@ export interface Trip {
   
   // Driver & Vehicle
   driverId?: string;
+  assignedDriverId?: string;
   driverName?: string;
   driverPhone?: string;
   permitNumber?: string;
   vehicleId?: string;
   vehicleModel?: string;
   vehicleLicensePlate?: string;
-  driverLocation?: { lat: number; lng: number; heading?: number };
+  driverLocation?: { lat: number; lng: number; heading?: number; speed?: number };
+  rejectedDriverIds?: string[];
   
   status: TripStatus;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+}
+
+export interface EmergencyAlert {
+  id: string;
+  driverId: string;
+  driverName: string;
+  driverPhone: string;
+  vehiclePlate?: string;
+  vehicleModel?: string;
+  permitNumber?: string;
+  location?: { lat: number; lng: number; heading?: number; speed?: number };
+  activeTripId?: string;
+  tripDetails?: {
+    customerName?: string;
+    customerPhone?: string;
+    pickup?: string;
+    destination?: string;
+    price?: number;
+  };
+  notes?: string;
+  status: 'active' | 'resolved';
+  createdAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
 }
 
 export interface Driver {
