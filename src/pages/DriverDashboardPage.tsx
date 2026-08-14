@@ -82,7 +82,7 @@ export const DriverDashboardPage: React.FC = () => {
   // Find driver object in real Firestore collection
   const currentDriver: Driver | undefined = drivers.find(
     (d) => d.id === user?.uid || d.email?.toLowerCase() === user?.email?.toLowerCase()
-  ) || (isAdmin ? drivers[0] : undefined);
+  ) || drivers[0];
 
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<'drive' | 'earnings' | 'trips' | 'hotspots' | 'vehicle' | 'profile' | 'settings'>('drive');

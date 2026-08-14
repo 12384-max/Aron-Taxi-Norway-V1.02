@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
@@ -7,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { PricingConfig, Trip, Driver, Vehicle, UserProfile, UserRole } from '../types';
 import { LeafletMap } from '../components/LeafletMap';
 import { OFFICIAL_ASSETS } from '../constants/assets';
+import { soundService } from '../services/sound';
 import { 
   ShieldAlert, 
   DollarSign, 
@@ -47,7 +49,19 @@ import {
   Folder,
   Unlink,
   Layers,
-  AlertCircle
+  AlertCircle,
+  Copy,
+  Volume2,
+  VolumeX,
+  Grid,
+  List,
+  LayoutGrid,
+  LogOut,
+  Radio,
+  Zap,
+  Shield,
+  UserCheck,
+  ExternalLink
 } from 'lucide-react';
 import { queryTripsFromFirestore } from '../services/tripQueryService';
 
@@ -77,8 +91,10 @@ export const AdminDashboardPage: React.FC = () => {
     resolveEmergencyAlert
   } = useTrips();
 
-  const { resetPassword } = useAuth();
+  const { user, logout, resetPassword } = useAuth();
+  const navigate = useNavigate();
 
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'trips' | 'drivers' | 'customers' | 'vehicles' | 'pricing'>('overview');
   const [tripFilter, setTripFilter] = useState<string>('all');
   const [selectedInvoiceTrip, setSelectedInvoiceTrip] = useState<Trip | null>(null);
@@ -91,7 +107,20 @@ export const AdminDashboardPage: React.FC = () => {
 
   const [driverSearch, setDriverSearch] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
+  const [customerRoleFilter, setCustomerRoleFilter] = useState<'all' | 'customer' | 'driver' | 'admin'>('all');
+  const [customerViewMode, setCustomerViewMode] = useState<'table' | 'cards'>('table');
+  const [revealedCustomerPasswords, setRevealedCustomerPasswords] = useState<Record<string, boolean>>({});
   const [vehicleSearch, setVehicleSearch] = useState('');
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    showToast(`${label} kopiert til utklippstavlen!`, 'success');
+    if (soundEnabled) soundService.playTripAcceptedSound(0.2);
+  };
+
+  const togglePasswordVisibility = (uid: string) => {
+    setRevealedCustomerPasswords((prev) => ({ ...prev, [uid]: !prev[uid] }));
+  };
 
   const applyTripDatePreset = (preset: 'all' | 'today' | '7days' | '30days' | 'this_month') => {
     setTripDatePreset(preset);
@@ -680,13 +709,19 @@ export const AdminDashboardPage: React.FC = () => {
   });
 
   const filteredCustomers = customers.filter((c) => {
+    if (customerRoleFilter !== 'all') {
+      const role = c.role || 'customer';
+      if (role !== customerRoleFilter) return false;
+    }
     const q = customerSearch.toLowerCase().trim();
     if (!q) return true;
     return (
       (c.name && c.name.toLowerCase().includes(q)) ||
       (c.email && c.email.toLowerCase().includes(q)) ||
       (c.phone && c.phone.toLowerCase().includes(q)) ||
-      (c.address && c.address.toLowerCase().includes(q))
+      (c.address && c.address.toLowerCase().includes(q)) ||
+      (c.postalCode && c.postalCode.toLowerCase().includes(q)) ||
+      (c.uid && c.uid.toLowerCase().includes(q))
     );
   });
 
@@ -853,144 +888,219 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
         )}
         
-        {/* ADMIN DISPATCH HEADER */}
-        <div className="bg-[#121722]/90 border border-white/10 rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 shadow-2xl backdrop-blur-xl">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border-2 border-amber-500/40 flex items-center justify-center text-amber-500 shrink-0">
-              <ShieldAlert className="w-7 h-7" />
+        {/* ADMIN DISPATCH HEADER (DRIVER/BOLT STYLE) */}
+        <div className="bg-[#111827] border border-white/10 rounded-2xl sm:rounded-3xl p-5 sm:p-7 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 shadow-2xl relative overflow-hidden">
+          <div className="flex items-center gap-4 sm:gap-5">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-[#34D186] text-slate-950 flex items-center justify-center font-black text-xl shadow-lg shadow-[#34D186]/20 shrink-0">
+              <Radio className="w-6 h-6 sm:w-7 sm:h-7 animate-pulse" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest block">
-                  ADMIN DISPATCH & KONTROLLSENTRAL
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#34D186]/20 text-[#34D186] border border-[#34D186]/30 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-[#34D186] animate-pulse" />
+                  LIVE DISPATCH SENTRAL
                 </span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[11px] text-slate-400 font-mono">
+                  {activeOnlineDrivers} aktive biler på vakt
+                </span>
               </div>
-              <h1 className="font-display text-2xl sm:text-3xl font-bold text-[#F5F2ED]">
-                Aron Taxi Norway Admin
+              <h1 className="font-display text-2xl sm:text-3xl font-black text-white tracking-tight mt-1">
+                Aron Taxi · Admin Sentral
               </h1>
-              <p className="text-xs text-slate-400 font-light">
-                Full kontroll over passord, e-post, biler, sjåfører, kunder, takster og live dispatch
+              <p className="text-xs text-slate-400">
+                Full kontroll over kunder, sjåfører, biler, turer, passord og takster
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2.5 flex-wrap w-full lg:w-auto justify-start lg:justify-end">
+            <button
+              onClick={() => {
+                setSoundEnabled(!soundEnabled);
+                if (!soundEnabled) soundService.playTripAcceptedSound(0.4);
+                showToast(soundEnabled ? 'Lydvarsler slått av' : 'Lydvarsler aktivert', 'info');
+              }}
+              className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                soundEnabled 
+                  ? 'bg-white/5 border-white/10 text-slate-200 hover:bg-white/10' 
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-300 hover:bg-rose-500/20'
+              }`}
+              title={soundEnabled ? 'Slå av lydvarsler' : 'Slå på lydvarsler'}
+            >
+              {soundEnabled ? <Volume2 className="w-4 h-4 text-[#34D186]" /> : <VolumeX className="w-4 h-4 text-rose-400" />}
+              <span className="hidden sm:inline">{soundEnabled ? 'Lyd På' : 'Lyd Av'}</span>
+            </button>
+
             <button
               onClick={() => setShowAddDriverModal(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-gradient-to-r from-[#D4AF37] to-[#C5A028] hover:brightness-110 text-slate-950 font-extrabold uppercase text-[11px] tracking-wider rounded-xl transition-all shadow-md shadow-[#D4AF37]/20 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-white/10 hover:bg-white/15 border border-white/10 text-white font-bold uppercase text-[11px] tracking-wider rounded-xl transition-all cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-3.5 h-3.5 text-[#34D186]" />
               Ny Sjåfør
             </button>
             <button
               onClick={() => setShowAddCustomerModal(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-slate-200 font-bold uppercase text-[11px] tracking-wider rounded-xl transition-all cursor-pointer border border-white/10"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black uppercase text-[11px] tracking-wider rounded-xl transition-all shadow-lg shadow-[#34D186]/20 cursor-pointer"
             >
-              <UserPlus className="w-3.5 h-3.5 text-[#D4AF37]" />
+              <UserPlus className="w-3.5 h-3.5" />
               Ny Kunde
             </button>
             <button
               onClick={() => setShowAddVehicleModal(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-slate-200 font-bold uppercase text-[11px] tracking-wider rounded-xl transition-all cursor-pointer border border-white/10"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 bg-white/10 hover:bg-white/15 border border-white/10 text-white font-bold uppercase text-[11px] tracking-wider rounded-xl transition-all cursor-pointer"
             >
-              <Car className="w-3.5 h-3.5 text-emerald-400" />
+              <Car className="w-3.5 h-3.5 text-[#D4AF37]" />
               Ny Bil
             </button>
           </div>
         </div>
 
-        {/* METRICS DASHBOARD */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
-          <div className="bg-[#121722]/90 border border-white/10 rounded-2xl p-4 space-y-1 backdrop-blur-xl">
-            <span className="text-slate-400 uppercase font-bold text-[10px]">Totalt Brutto</span>
-            <span className="block font-display text-lg sm:text-xl font-bold text-[#D4AF37]">{totalGrossRevenue} NOK</span>
+        {/* METRICS DASHBOARD (BOLT / DRIVER STYLE) */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 text-xs">
+          <div className="bg-[#111827] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-1.5 shadow-xl hover:border-[#34D186]/40 transition-all group">
+            <div className="flex items-center justify-between text-slate-400">
+              <span className="uppercase font-bold text-[10px] tracking-wider">Totalt Brutto</span>
+              <div className="w-6 h-6 rounded-lg bg-[#D4AF37]/15 text-[#D4AF37] flex items-center justify-center">
+                <DollarSign className="w-3.5 h-3.5" />
+              </div>
+            </div>
+            <span className="block font-display text-xl sm:text-2xl font-black text-[#D4AF37]">{totalGrossRevenue} NOK</span>
+            <span className="text-[10px] text-slate-500 font-medium">Samlet omsetning</span>
           </div>
-          <div className="bg-[#121722]/90 border border-white/10 rounded-2xl p-4 space-y-1 backdrop-blur-xl">
-            <span className="text-slate-400 uppercase font-bold text-[10px]">Aron Provisjon</span>
-            <span className="block font-display text-lg sm:text-xl font-bold text-emerald-400">{Math.round(totalAronCommission)} NOK</span>
+
+          <div className="bg-[#111827] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-1.5 shadow-xl hover:border-[#34D186]/40 transition-all group">
+            <div className="flex items-center justify-between text-slate-400">
+              <span className="uppercase font-bold text-[10px] tracking-wider">Aron Provisjon</span>
+              <div className="w-6 h-6 rounded-lg bg-[#34D186]/15 text-[#34D186] flex items-center justify-center">
+                <Zap className="w-3.5 h-3.5" />
+              </div>
+            </div>
+            <span className="block font-display text-xl sm:text-2xl font-black text-[#34D186]">{Math.round(totalAronCommission)} NOK</span>
+            <span className="text-[10px] text-slate-500 font-medium">15% sentralandel</span>
           </div>
-          <div className="bg-[#121722]/90 border border-white/10 rounded-2xl p-4 space-y-1 backdrop-blur-xl">
-            <span className="text-slate-400 uppercase font-bold text-[10px]">Sjåfører Online</span>
-            <span className="block font-display text-lg sm:text-xl font-bold text-emerald-400">{activeOnlineDrivers} / {drivers.length}</span>
+
+          <div className="bg-[#111827] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-1.5 shadow-xl hover:border-[#34D186]/40 transition-all group">
+            <div className="flex items-center justify-between text-slate-400">
+              <span className="uppercase font-bold text-[10px] tracking-wider">Sjåfører På Vakt</span>
+              <div className="w-6 h-6 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center">
+                <Car className="w-3.5 h-3.5" />
+              </div>
+            </div>
+            <span className="block font-display text-xl sm:text-2xl font-black text-emerald-400">{activeOnlineDrivers} / {drivers.length}</span>
+            <span className="text-[10px] text-slate-500 font-medium">Aktive i Oslo</span>
           </div>
-          <div className="bg-[#121722]/90 border border-white/10 rounded-2xl p-4 space-y-1 backdrop-blur-xl">
-            <span className="text-slate-400 uppercase font-bold text-[10px]">Kunder</span>
-            <span className="block font-display text-lg sm:text-xl font-bold text-slate-200">{customers.length}</span>
+
+          <div className="bg-[#111827] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-1.5 shadow-xl hover:border-[#34D186]/40 transition-all group">
+            <div className="flex items-center justify-between text-slate-400">
+              <span className="uppercase font-bold text-[10px] tracking-wider">Kunder</span>
+              <div className="w-6 h-6 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center">
+                <Users className="w-3.5 h-3.5" />
+              </div>
+            </div>
+            <span className="block font-display text-xl sm:text-2xl font-black text-white">{customers.length}</span>
+            <span className="text-[10px] text-slate-500 font-medium">Registrerte brukere</span>
           </div>
-          <div className="bg-[#121722]/90 border border-white/10 rounded-2xl p-4 space-y-1 backdrop-blur-xl">
-            <span className="text-slate-400 uppercase font-bold text-[10px]">Biler i Flåten</span>
-            <span className="block font-display text-lg sm:text-xl font-bold text-cyan-400">{vehicles.length}</span>
+
+          <div className="bg-[#111827] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-1.5 shadow-xl hover:border-[#34D186]/40 transition-all group">
+            <div className="flex items-center justify-between text-slate-400">
+              <span className="uppercase font-bold text-[10px] tracking-wider">Biler i Flåten</span>
+              <div className="w-6 h-6 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center">
+                <Key className="w-3.5 h-3.5" />
+              </div>
+            </div>
+            <span className="block font-display text-xl sm:text-2xl font-black text-cyan-400">{vehicles.length}</span>
+            <span className="text-[10px] text-slate-500 font-medium">Tesla & Mercedes</span>
           </div>
-          <div className="bg-[#121722]/90 border border-white/10 rounded-2xl p-4 space-y-1 backdrop-blur-xl">
-            <span className="text-slate-400 uppercase font-bold text-[10px]">Ubetjente Jobs</span>
-            <span className={`block font-display text-lg sm:text-xl font-bold ${pendingJobs > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+
+          <div className="bg-[#111827] border border-white/10 rounded-2xl p-4 sm:p-5 space-y-1.5 shadow-xl hover:border-[#34D186]/40 transition-all group">
+            <div className="flex items-center justify-between text-slate-400">
+              <span className="uppercase font-bold text-[10px] tracking-wider">Ventende Jobs</span>
+              <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${pendingJobs > 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-white/5 text-slate-500'}`}>
+                <Clock className="w-3.5 h-3.5" />
+              </div>
+            </div>
+            <span className={`block font-display text-xl sm:text-2xl font-black ${pendingJobs > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
               {pendingJobs}
             </span>
+            <span className="text-[10px] text-slate-500 font-medium">Ubetjente turer</span>
           </div>
         </div>
 
-        {/* NAVIGATION TABS */}
-        <div className="flex border-b border-white/10 text-xs font-bold uppercase tracking-wider overflow-x-auto gap-2">
+        {/* NAVIGATION TABS (DRIVER-STYLE FLOATING PILL BAR) */}
+        <div className="bg-[#111827] border border-white/10 p-1.5 rounded-2xl flex items-center gap-1.5 overflow-x-auto shadow-xl">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`py-3 px-4 border-b-2 transition-all whitespace-nowrap ${
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'overview'
-                ? 'border-[#D4AF37] text-[#D4AF37]'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
+            <Radio className="w-3.5 h-3.5" />
             Live Dispatch & Kart
+            {pendingJobs > 0 && (
+              <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-black ${
+                activeTab === 'overview' ? 'bg-slate-950 text-[#34D186]' : 'bg-amber-500 text-slate-950'
+              }`}>
+                {pendingJobs}
+              </span>
+            )}
           </button>
+
           <button
             onClick={() => setActiveTab('trips')}
-            className={`py-3 px-4 border-b-2 transition-all whitespace-nowrap ${
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'trips'
-                ? 'border-[#D4AF37] text-[#D4AF37]'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
+            <Receipt className="w-3.5 h-3.5" />
             Turer ({trips.length})
           </button>
+
           <button
             onClick={() => setActiveTab('drivers')}
-            className={`py-3 px-4 border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'drivers'
-                ? 'border-[#D4AF37] text-[#D4AF37]'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <Car className="w-3.5 h-3.5" />
             Sjåfører ({drivers.length})
           </button>
+
           <button
             onClick={() => setActiveTab('customers')}
-            className={`py-3 px-4 border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'customers'
-                ? 'border-[#D4AF37] text-[#D4AF37]'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
             Kunder & Brukere ({customers.length})
           </button>
+
           <button
             onClick={() => setActiveTab('vehicles')}
-            className={`py-3 px-4 border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'vehicles'
-                ? 'border-[#D4AF37] text-[#D4AF37]'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <Key className="w-3.5 h-3.5" />
             Flåte & Biler ({vehicles.length})
           </button>
+
           <button
             onClick={() => setActiveTab('pricing')}
-            className={`py-3 px-4 border-b-2 transition-all whitespace-nowrap flex items-center gap-1.5 ${
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'pricing'
-                ? 'border-[#D4AF37] text-[#D4AF37]'
-                : 'border-transparent text-slate-500 hover:text-slate-300'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <Settings className="w-3.5 h-3.5" />
@@ -1527,34 +1637,45 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
         )}
 
-        {/* CUSTOMERS & USERS TAB */}
+        {/* CUSTOMERS & USERS TAB (DRIVER-STYLE MANAGEMENT) */}
         {activeTab === 'customers' && (
           <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <h2 className="font-display text-xl font-bold text-[#F5F2ED]">
+            {/* TOP HEADER & STATS */}
+            <div className="bg-[#111827] border border-white/10 rounded-2xl sm:rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-[#34D186]/20 text-[#34D186] border border-[#34D186]/30">
+                    Brukerdatabase
+                  </span>
+                  <span className="text-xs text-slate-400 font-medium">
+                    {filteredCustomers.length} av {customers.length} brukere vist
+                  </span>
+                </div>
+                <h2 className="font-display text-2xl font-black text-white">
                   Kunder & Brukeradministrasjon
                 </h2>
-                <p className="text-xs text-slate-400">
-                  Opprett kontoer, endre e-post, passord, roller og adresser
+                <p className="text-xs text-slate-400 max-w-xl">
+                  Full frihet til å redigere navn, e-post, telefon, adresser, roller og passord, eller slette kundekontoer permanent.
                 </p>
               </div>
 
-              <div className="flex items-center gap-3 w-full sm:w-auto">
-                <div className="relative flex-1 sm:w-64">
-                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3" />
-                  <input
-                    type="text"
-                    placeholder="Søk kunde, e-post, tlf..."
-                    value={customerSearch}
-                    onChange={(e) => setCustomerSearch(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 bg-[#121722] border border-white/10 rounded-xl text-xs text-[#F5F2ED] placeholder-slate-500 focus:outline-none focus:border-[#D4AF37]"
-                  />
+              {/* STATS PILLS */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 text-xs">
+                  <span className="text-[10px] text-slate-400 block uppercase font-bold">Kunder</span>
+                  <span className="font-bold text-white font-mono">{customers.filter(c => !c.role || c.role === 'customer').length}</span>
                 </div>
-
+                <div className="px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs">
+                  <span className="text-[10px] text-amber-400 block uppercase font-bold">Sjåførkontoer</span>
+                  <span className="font-bold text-amber-300 font-mono">{customers.filter(c => c.role === 'driver').length}</span>
+                </div>
+                <div className="px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs">
+                  <span className="text-[10px] text-rose-400 block uppercase font-bold">Admin</span>
+                  <span className="font-bold text-rose-300 font-mono">{customers.filter(c => c.role === 'admin').length}</span>
+                </div>
                 <button
                   onClick={() => setShowAddCustomerModal(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#D4AF37] hover:brightness-110 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shrink-0 cursor-pointer"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-[#34D186]/20 cursor-pointer shrink-0 ml-auto lg:ml-0"
                 >
                   <UserPlus className="w-4 h-4" />
                   Opprett Ny Kunde
@@ -1562,84 +1683,387 @@ export const AdminDashboardPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-[#121722]/90 border border-white/10 rounded-3xl overflow-hidden shadow-2xl backdrop-blur-xl">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-[#0D121D] border-b border-white/10 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
-                    <tr>
-                      <th className="py-3.5 px-4">Navn & Bruker</th>
-                      <th className="py-3.5 px-4">E-post</th>
-                      <th className="py-3.5 px-4">Telefon</th>
-                      <th className="py-3.5 px-4">Passord</th>
-                      <th className="py-3.5 px-4">Rolle</th>
-                      <th className="py-3.5 px-4">Adresse</th>
-                      <th className="py-3.5 px-4 text-right">Handlinger</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {filteredCustomers.map((c) => (
-                      <tr key={c.uid} className="hover:bg-white/[0.02] transition-colors">
-                        <td className="py-3.5 px-4 font-semibold text-[#F5F2ED]">
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 rounded-full bg-[#D4AF37]/15 text-[#D4AF37] font-bold flex items-center justify-center text-[10px]">
-                              {c.name ? c.name.slice(0, 2).toUpperCase() : 'CU'}
-                            </div>
-                            <div>
-                              <span>{c.name || 'Ukjent'}</span>
-                              <span className="block text-[9px] text-slate-500 font-mono">{c.uid}</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-4 text-[#D4AF37] font-medium">{c.email}</td>
-                        <td className="py-3.5 px-4 text-slate-300">{c.phone || '–'}</td>
-                        <td className="py-3.5 px-4">
-                          <span className="font-mono text-[11px] text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded">
-                            {c.password ? c.password : 'kunde1234'}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
-                            c.role === 'admin'
-                              ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                              : c.role === 'driver'
-                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                              : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          }`}>
-                            {c.role || 'customer'}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-400 truncate max-w-xs">{c.address || '–'}</td>
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => handleSendResetEmail(c.email)}
-                              className="p-1.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-lg text-[10px] font-semibold transition-all"
-                              title="Send tilbakestill passord-epost"
-                            >
-                              <Mail className="w-3.5 h-3.5 text-amber-400" />
-                            </button>
-                            <button
-                              onClick={() => openEditCustomer(c)}
-                              className="p-1.5 bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] rounded-lg text-[10px] font-semibold transition-all"
-                              title="Rediger kunde"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteCustomer(c.uid, c.name)}
-                              className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-all"
-                              title="Slett kunde"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* FILTER & SEARCH BAR */}
+            <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+              {/* Role filter buttons */}
+              <div className="bg-[#111827] border border-white/10 p-1 rounded-xl flex items-center gap-1 overflow-x-auto">
+                <button
+                  onClick={() => setCustomerRoleFilter('all')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    customerRoleFilter === 'all'
+                      ? 'bg-white/15 text-white font-extrabold shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Alle ({customers.length})
+                </button>
+                <button
+                  onClick={() => setCustomerRoleFilter('customer')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    customerRoleFilter === 'customer'
+                      ? 'bg-[#34D186] text-slate-950 font-black shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Vanlige Kunder ({customers.filter(c => !c.role || c.role === 'customer').length})
+                </button>
+                <button
+                  onClick={() => setCustomerRoleFilter('driver')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    customerRoleFilter === 'driver'
+                      ? 'bg-amber-500 text-slate-950 font-black shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Sjåførkontoer ({customers.filter(c => c.role === 'driver').length})
+                </button>
+                <button
+                  onClick={() => setCustomerRoleFilter('admin')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    customerRoleFilter === 'admin'
+                      ? 'bg-rose-500 text-white font-black shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Administratorer ({customers.filter(c => c.role === 'admin').length})
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* Search input */}
+                <div className="relative flex-1 md:w-72">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Søk navn, e-post, tlf, postnr..."
+                    value={customerSearch}
+                    onChange={(e) => setCustomerSearch(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 bg-[#111827] border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#34D186]"
+                  />
+                  {customerSearch && (
+                    <button
+                      onClick={() => setCustomerSearch('')}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* View Mode Toggle */}
+                <div className="bg-[#111827] border border-white/10 p-1 rounded-xl flex items-center gap-1">
+                  <button
+                    onClick={() => setCustomerViewMode('table')}
+                    className={`p-1.5 rounded-lg text-xs transition-all cursor-pointer ${
+                      customerViewMode === 'table' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                    title="Tabellvisning"
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setCustomerViewMode('cards')}
+                    className={`p-1.5 rounded-lg text-xs transition-all cursor-pointer ${
+                      customerViewMode === 'cards' ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'
+                    }`}
+                    title="Kortvisning"
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
+
+            {/* CUSTOMER LIST: TABLE OR CARDS */}
+            {customerViewMode === 'table' ? (
+              <div className="bg-[#111827] border border-white/10 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#0B0F19] border-b border-white/10 text-slate-400 uppercase text-[10px] tracking-wider font-bold">
+                      <tr>
+                        <th className="py-3.5 px-4">Bruker & Navn</th>
+                        <th className="py-3.5 px-4">E-postadresse</th>
+                        <th className="py-3.5 px-4">Telefon</th>
+                        <th className="py-3.5 px-4">Passord</th>
+                        <th className="py-3.5 px-4">Rolle</th>
+                        <th className="py-3.5 px-4">Adresse & Postnr</th>
+                        <th className="py-3.5 px-4 text-right">Handlinger</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {filteredCustomers.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-12 text-center text-slate-400">
+                            Ingen kunder funnet med søkekriteriene.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredCustomers.map((c) => {
+                          const isRevealed = revealedCustomerPasswords[c.uid];
+                          return (
+                            <tr key={c.uid} className="hover:bg-white/[0.02] transition-colors">
+                              <td className="py-3.5 px-4 font-semibold text-white">
+                                <div className="flex items-center gap-2.5">
+                                  <div className={`w-8 h-8 rounded-xl font-black flex items-center justify-center text-xs shrink-0 border ${
+                                    c.role === 'admin'
+                                      ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                                      : c.role === 'driver'
+                                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                      : 'bg-[#34D186]/20 text-[#34D186] border-[#34D186]/30'
+                                  }`}>
+                                    {c.name ? c.name.slice(0, 2).toUpperCase() : 'CU'}
+                                  </div>
+                                  <div>
+                                    <span className="block font-bold text-white text-xs">{c.name || 'Uten navn'}</span>
+                                    <span className="text-[10px] text-slate-500 font-mono truncate max-w-[120px] block">
+                                      {c.uid}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-white font-medium">{c.email}</span>
+                                  <button
+                                    onClick={() => copyToClipboard(c.email, 'E-post')}
+                                    className="p-1 text-slate-500 hover:text-white transition-colors cursor-pointer"
+                                    title="Kopier e-post"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                {c.phone ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-slate-300 font-mono">{c.phone}</span>
+                                    <button
+                                      onClick={() => copyToClipboard(c.phone || '', 'Telefon')}
+                                      className="p-1 text-slate-500 hover:text-white transition-colors cursor-pointer"
+                                      title="Kopier telefon"
+                                    >
+                                      <Copy className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-500 italic">–</span>
+                                )}
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg">
+                                    {isRevealed ? (c.password || 'kunde1234') : '••••••••'}
+                                  </span>
+                                  <button
+                                    onClick={() => togglePasswordVisibility(c.uid)}
+                                    className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                                    title={isRevealed ? 'Skjul passord' : 'Vis passord'}
+                                  >
+                                    {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                  </button>
+                                  <button
+                                    onClick={() => copyToClipboard(c.password || 'kunde1234', 'Passord')}
+                                    className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                                    title="Kopier passord"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4">
+                                <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${
+                                  c.role === 'admin'
+                                    ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                                    : c.role === 'driver'
+                                    ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                    : 'bg-[#34D186]/15 text-[#34D186] border-[#34D186]/30'
+                                }`}>
+                                  {c.role === 'admin' ? 'Admin' : c.role === 'driver' ? 'Sjåfør' : 'Kunde'}
+                                </span>
+                              </td>
+
+                              <td className="py-3.5 px-4 text-slate-300">
+                                <div className="truncate max-w-xs">
+                                  {c.address ? (
+                                    <span>{c.address} {c.postalCode ? `(${c.postalCode})` : ''}</span>
+                                  ) : (
+                                    <span className="text-slate-500 italic">Ingen adresse</span>
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="py-3.5 px-4 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    onClick={() => handleSendResetEmail(c.email)}
+                                    className="p-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl transition-all cursor-pointer"
+                                    title="Send tilbakestill passord-epost"
+                                  >
+                                    <Mail className="w-3.5 h-3.5 text-amber-400" />
+                                  </button>
+                                  <button
+                                    onClick={() => openEditCustomer(c)}
+                                    className="p-2 bg-white/10 hover:bg-[#34D186] hover:text-slate-950 text-white rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1"
+                                    title="Rediger kunde"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                    <span className="hidden sm:inline text-[11px]">Rediger</span>
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteCustomer(c.uid, c.name)}
+                                    className="p-2 bg-rose-500/15 hover:bg-rose-500 text-rose-300 hover:text-white rounded-xl transition-all cursor-pointer"
+                                    title="Slett kunde permanent"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              /* CARD / GRID VIEW */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredCustomers.length === 0 ? (
+                  <div className="col-span-full py-12 text-center text-slate-400 bg-[#111827] border border-white/10 rounded-2xl">
+                    Ingen kunder funnet med søkekriteriene.
+                  </div>
+                ) : (
+                  filteredCustomers.map((c) => {
+                    const isRevealed = revealedCustomerPasswords[c.uid];
+                    return (
+                      <div key={c.uid} className="bg-[#111827] border border-white/10 rounded-2xl p-5 space-y-4 shadow-xl hover:border-[#34D186]/40 transition-all flex flex-col justify-between">
+                        <div className="space-y-3">
+                          {/* TOP CARD BAR */}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <div className={`w-10 h-10 rounded-xl font-black flex items-center justify-center text-sm shrink-0 border ${
+                                c.role === 'admin'
+                                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                                  : c.role === 'driver'
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                  : 'bg-[#34D186]/20 text-[#34D186] border-[#34D186]/30'
+                              }`}>
+                                {c.name ? c.name.slice(0, 2).toUpperCase() : 'CU'}
+                              </div>
+                              <div>
+                                <h3 className="font-bold text-white text-sm">{c.name || 'Uten navn'}</h3>
+                                <span className="text-[10px] text-slate-500 font-mono block">ID: {c.uid}</span>
+                              </div>
+                            </div>
+
+                            <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${
+                              c.role === 'admin'
+                                ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                                : c.role === 'driver'
+                                ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                : 'bg-[#34D186]/15 text-[#34D186] border-[#34D186]/30'
+                            }`}>
+                              {c.role === 'admin' ? 'Admin' : c.role === 'driver' ? 'Sjåfør' : 'Kunde'}
+                            </span>
+                          </div>
+
+                          {/* DETAILS */}
+                          <div className="space-y-2 text-xs pt-1">
+                            <div className="flex items-center justify-between py-1 border-b border-white/5">
+                              <span className="text-slate-400">E-post:</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-semibold text-white">{c.email}</span>
+                                <button
+                                  onClick={() => copyToClipboard(c.email, 'E-post')}
+                                  className="text-slate-500 hover:text-white"
+                                  title="Kopier"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between py-1 border-b border-white/5">
+                              <span className="text-slate-400">Telefon:</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-slate-200">{c.phone || '–'}</span>
+                                {c.phone && (
+                                  <button
+                                    onClick={() => copyToClipboard(c.phone || '', 'Telefon')}
+                                    className="text-slate-500 hover:text-white"
+                                    title="Kopier"
+                                  >
+                                    <Copy className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between py-1 border-b border-white/5">
+                              <span className="text-slate-400">Passord:</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-xs font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded">
+                                  {isRevealed ? (c.password || 'kunde1234') : '••••••••'}
+                                </span>
+                                <button
+                                  onClick={() => togglePasswordVisibility(c.uid)}
+                                  className="text-slate-400 hover:text-white"
+                                >
+                                  {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                </button>
+                                <button
+                                  onClick={() => copyToClipboard(c.password || 'kunde1234', 'Passord')}
+                                  className="text-slate-400 hover:text-white"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between py-1">
+                              <span className="text-slate-400">Adresse:</span>
+                              <span className="text-slate-200 truncate max-w-[180px]">
+                                {c.address || '–'} {c.postalCode ? `(${c.postalCode})` : ''}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* ACTIONS */}
+                        <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2">
+                          <button
+                            onClick={() => openEditCustomer(c)}
+                            className="flex-1 py-2 px-3 bg-[#34D186]/15 hover:bg-[#34D186] text-[#34D186] hover:text-slate-950 border border-[#34D186]/40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                            Rediger Kunde
+                          </button>
+                          <button
+                            onClick={() => handleSendResetEmail(c.email)}
+                            className="p-2 bg-white/5 hover:bg-white/10 text-slate-300 rounded-xl transition-all cursor-pointer"
+                            title="Send tilbakestill passord-epost"
+                          >
+                            <Mail className="w-4 h-4 text-amber-400" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCustomer(c.uid, c.name)}
+                            className="p-2 bg-rose-500/15 hover:bg-rose-500 text-rose-300 hover:text-white rounded-xl transition-all cursor-pointer"
+                            title="Slett kunde permanent"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -2153,16 +2577,16 @@ export const AdminDashboardPage: React.FC = () => {
         </div>
       )}
 
-      {/* 3. ADD CUSTOMER MODAL */}
+      {/* 3. ADD CUSTOMER MODAL (DRIVER STYLE) */}
       {showAddCustomerModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#121722] border border-white/10 rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-6 shadow-2xl">
+          <div className="bg-[#111827] border border-white/10 rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-6 shadow-2xl">
             <div className="flex justify-between items-center pb-4 border-b border-white/10">
-              <h3 className="font-display text-xl font-bold text-[#F5F2ED] flex items-center gap-2">
-                <UserPlus className="w-5 h-5 text-[#D4AF37]" />
+              <h3 className="font-display text-xl font-black text-white flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-[#34D186]" />
                 Registrer Ny Kunde
               </h3>
-              <button onClick={() => setShowAddCustomerModal(false)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setShowAddCustomerModal(false)} className="text-slate-400 hover:text-white p-1 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -2170,44 +2594,44 @@ export const AdminDashboardPage: React.FC = () => {
             <form onSubmit={handleCreateCustomer} className="space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-400 uppercase mb-1">Navn *</label>
+                  <label className="block font-bold text-slate-300 uppercase mb-1">Navn *</label>
                   <input
                     type="text"
                     required
                     placeholder="Ola Nordmann"
                     value={newCustomerForm.name}
                     onChange={(e) => setNewCustomerForm({ ...newCustomerForm, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0D121D] border border-white/10 rounded-xl text-[#F5F2ED]"
+                    className="w-full px-3 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-400 uppercase mb-1">E-post *</label>
+                  <label className="block font-bold text-slate-300 uppercase mb-1">E-post *</label>
                   <input
                     type="email"
                     required
                     placeholder="kunde@bedrift.no"
                     value={newCustomerForm.email}
                     onChange={(e) => setNewCustomerForm({ ...newCustomerForm, email: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0D121D] border border-white/10 rounded-xl text-[#F5F2ED]"
+                    className="w-full px-3 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-400 uppercase mb-1">Telefon</label>
+                  <label className="block font-bold text-slate-300 uppercase mb-1">Telefon</label>
                   <input
                     type="text"
                     placeholder="+47 400 00 000"
                     value={newCustomerForm.phone}
                     onChange={(e) => setNewCustomerForm({ ...newCustomerForm, phone: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0D121D] border border-white/10 rounded-xl text-[#F5F2ED]"
+                    className="w-full px-3 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-400 uppercase mb-1">Passord *</label>
+                  <label className="block font-bold text-slate-300 uppercase mb-1">Passord *</label>
                   <div className="relative">
                     <input
                       type={showCustomerPassword ? 'text' : 'password'}
@@ -2215,26 +2639,26 @@ export const AdminDashboardPage: React.FC = () => {
                       placeholder="Passord..."
                       value={newCustomerForm.password}
                       onChange={(e) => setNewCustomerForm({ ...newCustomerForm, password: e.target.value })}
-                      className="w-full pl-3 pr-8 py-2 bg-[#0D121D] border border-white/10 rounded-xl text-[#F5F2ED]"
+                      className="w-full pl-3 pr-9 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
                     />
                     <button
                       type="button"
                       onClick={() => setShowCustomerPassword(!showCustomerPassword)}
-                      className="absolute right-2.5 top-2.5 text-slate-400"
+                      className="absolute right-2.5 top-3 text-slate-400 hover:text-white"
                     >
-                      {showCustomerPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {showCustomerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-400 uppercase mb-1">Brukertype / Rolle</label>
+                  <label className="block font-bold text-slate-300 uppercase mb-1">Brukertype / Rolle</label>
                   <select
                     value={newCustomerForm.role}
                     onChange={(e) => setNewCustomerForm({ ...newCustomerForm, role: e.target.value as UserRole })}
-                    className="w-full px-3 py-2 bg-[#0D121D] border border-white/10 rounded-xl text-[#F5F2ED]"
+                    className="w-full px-3 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
                   >
                     <option value="customer">Kunde (Standard)</option>
                     <option value="driver">Sjåfør</option>
@@ -2242,42 +2666,62 @@ export const AdminDashboardPage: React.FC = () => {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block font-bold text-slate-400 uppercase mb-1">Adresse</label>
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-300 uppercase mb-1">Adresse</label>
                   <input
                     type="text"
-                    placeholder="Gateadresse, Poststed"
+                    placeholder="Gateadresse"
                     value={newCustomerForm.address}
                     onChange={(e) => setNewCustomerForm({ ...newCustomerForm, address: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0D121D] border border-white/10 rounded-xl text-[#F5F2ED]"
+                    className="w-full px-3 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
                   />
                 </div>
               </div>
 
-              <button
-                type="submit"
-                className="w-full py-3.5 bg-gradient-to-r from-[#D4AF37] to-[#C5A028] text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg mt-4 cursor-pointer"
-              >
-                Opprett Brukerkonto
-              </button>
+              <div>
+                <label className="block font-bold text-slate-300 uppercase mb-1">Postnummer / Poststed</label>
+                <input
+                  type="text"
+                  placeholder="0150 Oslo"
+                  value={newCustomerForm.postalCode}
+                  onChange={(e) => setNewCustomerForm({ ...newCustomerForm, postalCode: e.target.value })}
+                  className="w-full px-3 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowAddCustomerModal(false)}
+                  className="px-4 py-3 bg-white/5 hover:bg-white/10 text-slate-300 font-bold rounded-xl transition-all cursor-pointer"
+                >
+                  Avbryt
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-[#34D186]/20 cursor-pointer"
+                >
+                  Opprett Brukerkonto
+                </button>
+              </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* 4. EDIT CUSTOMER MODAL */}
+      {/* 4. EDIT CUSTOMER MODAL (DRIVER STYLE) */}
       {editingCustomer && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#121722] border border-white/10 rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-6 shadow-2xl">
+          <div className="bg-[#111827] border border-white/10 rounded-3xl p-6 sm:p-8 max-w-lg w-full space-y-6 shadow-2xl">
             <div className="flex justify-between items-center pb-4 border-b border-white/10">
               <div>
-                <h3 className="font-display text-xl font-bold text-[#F5F2ED] flex items-center gap-2">
-                  <Edit2 className="w-5 h-5 text-[#D4AF37]" />
+                <h3 className="font-display text-xl font-black text-white flex items-center gap-2">
+                  <Edit2 className="w-5 h-5 text-[#34D186]" />
                   Rediger Kunde / Bruker
                 </h3>
                 <span className="text-[10px] text-slate-400 font-mono">UID: {editingCustomer.uid}</span>
               </div>
-              <button onClick={() => setEditingCustomer(null)} className="text-slate-400 hover:text-white">
+              <button onClick={() => setEditingCustomer(null)} className="text-slate-400 hover:text-white p-1 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -2285,67 +2729,67 @@ export const AdminDashboardPage: React.FC = () => {
             <form onSubmit={handleSaveCustomerEdit} className="space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-400 uppercase mb-1">Navn</label>
+                  <label className="block font-bold text-slate-300 uppercase mb-1">Navn</label>
                   <input
                     type="text"
                     required
                     value={editCustomerForm.name}
                     onChange={(e) => setEditCustomerForm({ ...editCustomerForm, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0D121D] border border-white/10 rounded-xl text-[#F5F2ED]"
+                    className="w-full px-3 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-400 uppercase mb-1">E-post</label>
+                  <label className="block font-bold text-slate-300 uppercase mb-1">E-post</label>
                   <input
                     type="email"
                     required
                     value={editCustomerForm.email}
                     onChange={(e) => setEditCustomerForm({ ...editCustomerForm, email: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0D121D] border border-white/10 rounded-xl text-[#F5F2ED]"
+                    className="w-full px-3 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-400 uppercase mb-1">Telefon</label>
+                  <label className="block font-bold text-slate-300 uppercase mb-1">Telefon</label>
                   <input
                     type="text"
                     value={editCustomerForm.phone}
                     onChange={(e) => setEditCustomerForm({ ...editCustomerForm, phone: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0D121D] border border-white/10 rounded-xl text-[#F5F2ED]"
+                    className="w-full px-3 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-400 uppercase mb-1">Endre Passord</label>
+                  <label className="block font-bold text-slate-300 uppercase mb-1">Endre Passord</label>
                   <div className="relative">
                     <input
                       type={showCustomerPassword ? 'text' : 'password'}
                       placeholder="Skriv nytt passord..."
                       value={editCustomerForm.password}
                       onChange={(e) => setEditCustomerForm({ ...editCustomerForm, password: e.target.value })}
-                      className="w-full pl-3 pr-8 py-2 bg-[#0D121D] border border-white/10 rounded-xl text-[#F5F2ED]"
+                      className="w-full pl-3 pr-9 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
                     />
                     <button
                       type="button"
                       onClick={() => setShowCustomerPassword(!showCustomerPassword)}
-                      className="absolute right-2.5 top-2.5 text-slate-400"
+                      className="absolute right-2.5 top-3 text-slate-400 hover:text-white"
                     >
-                      {showCustomerPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      {showCustomerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-400 uppercase mb-1">Rolle</label>
+                  <label className="block font-bold text-slate-300 uppercase mb-1">Rolle</label>
                   <select
                     value={editCustomerForm.role}
                     onChange={(e) => setEditCustomerForm({ ...editCustomerForm, role: e.target.value as UserRole })}
-                    className="w-full px-3 py-2 bg-[#0D121D] border border-white/10 rounded-xl text-[#F5F2ED]"
+                    className="w-full px-3 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
                   >
                     <option value="customer">Kunde</option>
                     <option value="driver">Sjåfør</option>
@@ -2353,23 +2797,43 @@ export const AdminDashboardPage: React.FC = () => {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block font-bold text-slate-400 uppercase mb-1">Adresse</label>
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-300 uppercase mb-1">Adresse</label>
                   <input
                     type="text"
                     value={editCustomerForm.address}
                     onChange={(e) => setEditCustomerForm({ ...editCustomerForm, address: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#0D121D] border border-white/10 rounded-xl text-[#F5F2ED]"
+                    className="w-full px-3 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
                   />
                 </div>
               </div>
 
-              <button
-                type="submit"
-                className="w-full py-3.5 bg-gradient-to-r from-[#D4AF37] to-[#C5A028] text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg mt-4 cursor-pointer"
-              >
-                Lagre Kundeendringer
-              </button>
+              <div>
+                <label className="block font-bold text-slate-300 uppercase mb-1">Postnummer / Poststed</label>
+                <input
+                  type="text"
+                  placeholder="0150 Oslo"
+                  value={editCustomerForm.postalCode}
+                  onChange={(e) => setEditCustomerForm({ ...editCustomerForm, postalCode: e.target.value })}
+                  className="w-full px-3 py-2.5 bg-[#0B0F19] border border-white/10 rounded-xl text-white focus:outline-none focus:border-[#34D186]"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingCustomer(null)}
+                  className="px-4 py-3 bg-white/5 hover:bg-white/10 text-slate-300 font-bold rounded-xl transition-all cursor-pointer"
+                >
+                  Avbryt
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-3 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-[#34D186]/20 cursor-pointer"
+                >
+                  Lagre Kundeendringer
+                </button>
+              </div>
             </form>
           </div>
         </div>

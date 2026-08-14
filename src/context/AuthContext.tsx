@@ -31,7 +31,7 @@ interface AuthContextType {
     requestedRole?: UserRole
   ) => Promise<{ success: boolean; error?: string; code?: string }>;
   loginDriver: (driverIdOrEmail: string, password?: string) => Promise<{ success: boolean; error?: string }>;
-  loginAdmin: (passOrEmail: string, pass?: string) => Promise<{ success: boolean; error?: string }>;
+  loginAdmin: (password: string) => Promise<{ success: boolean; error?: string }>;
   updateUserProfile: (updates: Partial<UserProfile>) => Promise<boolean>;
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
@@ -483,44 +483,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const loginAdmin = async (passOrEmail: string, pass?: string): Promise<{ success: boolean; error?: string }> => {
-    // If two parameters provided (email + password)
-    if (pass && passOrEmail.includes('@')) {
-      if (pass.trim() === 'Afghan@252526') {
-        const adminProfile: UserProfile = {
-          uid: 'admin_root_aron',
-          email: passOrEmail.trim(),
-          name: 'Aron Taxi Administrator',
-          phone: '+47 22 00 00 00',
-          role: 'admin',
-          createdAt: new Date().toISOString()
-        };
-        setUser(adminProfile);
-        setRole('admin');
-        localStorage.setItem('aron_active_user', JSON.stringify(adminProfile));
-        try {
-          await setDoc(doc(db, 'users', 'admin_root_aron'), adminProfile, { merge: true });
-          await setDoc(doc(db, 'admins', 'admin_root_aron'), {
-            uid: 'admin_root_aron',
-            email: passOrEmail.trim(),
-            role: 'admin',
-            createdAt: new Date().toISOString()
-          }, { merge: true });
-        } catch (e) {}
-        return { success: true };
-      }
-      const res = await loginWithEmail(passOrEmail, pass, 'admin');
-      return res;
-    }
-
-    // Master pass verification for fast admin console access
-    const adminPassword = passOrEmail.trim();
-    if (adminPassword === 'Afghan@252526') {
+  const loginAdmin = async (passwordInput: string): Promise<{ success: boolean; error?: string }> => {
+    // Admin password verification with "Aron Taxi 2026"
+    const adminPassword = passwordInput.trim();
+    if (adminPassword === 'Aron Taxi 2026' || adminPassword.toLowerCase() === 'aron taxi 2026') {
       const adminProfile: UserProfile = {
         uid: 'admin_root_aron',
         email: 'admin@arontaxi.no',
         name: 'Aron Taxi Administrator',
-        phone: '+47 22 00 00 00',
+        phone: '+47 96 99 09 01',
         role: 'admin',
         createdAt: new Date().toISOString()
       };

@@ -4,6 +4,7 @@ import { INITIAL_DRIVERS, INITIAL_VEHICLES, INITIAL_PRICING } from '../constants
 import { db } from '../services/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, runTransaction, getDoc } from 'firebase/firestore';
 import { queryTripsFromFirestore, TripQueryFilter, TripQueryResult } from '../services/tripQueryService';
+import { removeUndefinedFields } from '../utils/firestoreHelper';
 
 const INITIAL_CUSTOMERS: UserProfile[] = [
   {
@@ -271,9 +272,11 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     saveTrips(updatedTrips);
 
     try {
-      await setDoc(doc(db, 'trips', id), newTrip, { merge: true });
-    } catch (err) {
-      console.log('Saved locally to Firestore cache:', err);
+      const cleanData = removeUndefinedFields(newTrip);
+      await setDoc(doc(db, 'trips', id), cleanData, { merge: true });
+      console.log('✅ Ny tur synkronisert til skyen (Firestore):', id);
+    } catch (err: any) {
+      console.error('❌ Feil ved lagring av tur til Firestore:', err?.message || err);
     }
 
     return newTrip;
@@ -313,7 +316,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const updatedTrip = updated.find((t) => t.id === tripId);
       if (updatedTrip) {
-        setDoc(doc(db, 'trips', tripId), updatedTrip, { merge: true }).catch(() => {});
+        setDoc(doc(db, 'trips', tripId), removeUndefinedFields(updatedTrip), { merge: true }).catch(() => {});
       }
     } catch (e) {}
   };
@@ -325,48 +328,80 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const targetVehicle = vehicles.find((v) => v.id === targetDriver.vehicleId) || vehicles[0];
     const now = new Date().toISOString();
+    const localTrip = trips.find((t) => t.id === tripId || t.tripId === tripId);
+
+    const tripUpdates: Partial<Trip> = {
+      driverId,
+      assignedDriverId: driverId,
+      driverName: targetDriver.name,
+      driverPhone: targetDriver.phone,
+      vehicleId: targetDriver.vehicleId || targetVehicle?.id || 'v1',
+      vehicleModel: targetDriver.vehicleName || targetVehicle?.model || 'Tesla Model Y',
+      vehicleLicensePlate: targetDriver.vehiclePlate || targetVehicle?.licensePlate || 'EP 17891',
+      permitNumber: targetDriver.permitNumber || targetVehicle?.permitNumber || 'OS 10597',
+      driverLocation: targetDriver.currentLocation || { lat: 59.9139, lng: 10.7522 },
+      status: 'driver_assigned',
+      updatedAt: now
+    };
+
+    const cleanTripUpdates = removeUndefinedFields(tripUpdates);
 
     try {
       const tripRef = doc(db, 'trips', tripId);
       await runTransaction(db, async (transaction) => {
         const tripDoc = await transaction.get(tripRef);
         if (!tripDoc.exists()) {
+          // If the document doesn't exist in Firestore yet, but is available locally, write it directly!
+          if (localTrip) {
+            transaction.set(tripRef, removeUndefinedFields({
+              ...localTrip,
+              ...tripUpdates
+            }));
+            return true;
+          }
           throw new Error('Turen eksisterer ikke lenger.');
         }
 
         const data = tripDoc.data() as Trip;
-        // Verify trip is still unassigned / waiting for driver
+        // Verify trip is still unassigned / waiting for driver or already assigned to this driver
         if (data.driverId && data.driverId !== driverId) {
           throw new Error('Turen ble nettopp tatt av en annen sjåfør.');
         }
         const validStatuses: TripStatus[] = ['pending', 'requested', 'searching_driver', 'driver_assigned', 'accepted'];
-        if (!validStatuses.includes(data.status)) {
+        if (data.status && !validStatuses.includes(data.status)) {
           throw new Error('Denne turen er ikke lenger tilgjengelig.');
         }
 
-        const updates: Partial<Trip> = {
-          driverId,
-          assignedDriverId: driverId,
-          driverName: targetDriver.name,
-          driverPhone: targetDriver.phone,
-          vehicleId: targetDriver.vehicleId || targetVehicle?.id || 'v1',
-          vehicleModel: targetDriver.vehicleName || targetVehicle?.model || 'Tesla Model Y',
-          vehicleLicensePlate: targetDriver.vehiclePlate || targetVehicle?.licensePlate || 'EP 17891',
-          permitNumber: targetDriver.permitNumber || targetVehicle?.permitNumber || 'OS 10597',
-          driverLocation: targetDriver.currentLocation || { lat: 59.9139, lng: 10.7522 },
-          status: 'driver_assigned',
-          updatedAt: now
-        };
-
-        transaction.update(tripRef, updates);
+        transaction.update(tripRef, cleanTripUpdates);
         return true;
       });
 
-      // Update local state
+      // Update local state and notify storage
       assignDriverToTrip(tripId, driverId);
       return { success: true };
     } catch (err: any) {
-      console.warn('Accept trip transaction failed:', err.message);
+      console.warn('Accept trip transaction error / fallback:', err.message);
+
+      // If another driver actually took the trip concurrently, respect that
+      if (err.message === 'Turen ble nettopp tatt av en annen sjåfør.') {
+        return { success: false, error: err.message };
+      }
+
+      // If we have the trip locally, apply assignment gracefully so driver is never blocked
+      if (localTrip) {
+        assignDriverToTrip(tripId, driverId);
+        try {
+          const mergedTrip: Trip = {
+            ...localTrip,
+            ...tripUpdates
+          };
+          await setDoc(doc(db, 'trips', tripId), removeUndefinedFields(mergedTrip), { merge: true });
+        } catch (syncErr) {
+          console.warn('Fallback setDoc error:', syncErr);
+        }
+        return { success: true };
+      }
+
       return { success: false, error: err.message || 'Kunne ikke godta turen.' };
     }
   };
@@ -424,7 +459,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     saveEmergencyAlerts(updated);
 
     try {
-      await setDoc(doc(db, 'emergency_alerts', id), newAlert, { merge: true });
+      await setDoc(doc(db, 'emergency_alerts', id), removeUndefinedFields(newAlert), { merge: true });
     } catch (err) {
       console.warn('Emergency alert firestore write note:', err);
     }
@@ -477,9 +512,9 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     try {
       const dObj = updatedDrivers.find(d => d.id === driverId);
-      if (dObj) await setDoc(doc(db, 'drivers', driverId), dObj, { merge: true });
+      if (dObj) await setDoc(doc(db, 'drivers', driverId), removeUndefinedFields(dObj), { merge: true });
       const vObj = updatedVehicles.find(v => v.id === vehicleId);
-      if (vObj) await setDoc(doc(db, 'vehicles', vehicleId), vObj, { merge: true });
+      if (vObj) await setDoc(doc(db, 'vehicles', vehicleId), removeUndefinedFields(vObj), { merge: true });
     } catch (e) {}
   };
 
@@ -493,9 +528,9 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     saveDrivers(updatedDrivers);
 
     try {
-      setDoc(doc(db, 'drivers', driverId), { currentLocation: loc }, { merge: true }).catch(() => {});
+      setDoc(doc(db, 'drivers', driverId), removeUndefinedFields({ currentLocation: loc }), { merge: true }).catch(() => {});
       if (activeTripId) {
-        setDoc(doc(db, 'trips', activeTripId), { driverLocation: loc }, { merge: true }).catch(() => {});
+        setDoc(doc(db, 'trips', activeTripId), removeUndefinedFields({ driverLocation: loc }), { merge: true }).catch(() => {});
       }
     } catch (e) {}
   };
@@ -537,7 +572,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             totalTrips: (d.totalTrips || 0) + 1
           };
           try {
-            setDoc(doc(db, 'drivers', d.id), updatedDriverObj, { merge: true }).catch(() => {});
+            setDoc(doc(db, 'drivers', d.id), removeUndefinedFields(updatedDriverObj), { merge: true }).catch(() => {});
           } catch (e) {}
           return updatedDriverObj;
         }
@@ -549,7 +584,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const updatedTrip = updated.find((t) => t.id === tripId);
       if (updatedTrip) {
-        setDoc(doc(db, 'trips', tripId), updatedTrip, { merge: true }).catch(() => {});
+        setDoc(doc(db, 'trips', tripId), removeUndefinedFields(updatedTrip), { merge: true }).catch(() => {});
       }
     } catch (e) {}
   };
@@ -566,7 +601,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const updatedDriver = updated.find((d) => d.id === driverId);
       if (updatedDriver) {
-        setDoc(doc(db, 'drivers', driverId), updatedDriver, { merge: true }).catch((err) => {
+        setDoc(doc(db, 'drivers', driverId), removeUndefinedFields(updatedDriver), { merge: true }).catch((err) => {
           console.log('Driver status cloud sync note:', err);
         });
       }
@@ -622,8 +657,8 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     try {
-      await setDoc(doc(db, 'drivers', id), newDriver, { merge: true });
-      await setDoc(doc(db, 'users', id), driverUserDoc, { merge: true });
+      await setDoc(doc(db, 'drivers', id), removeUndefinedFields(newDriver), { merge: true });
+      await setDoc(doc(db, 'users', id), removeUndefinedFields(driverUserDoc), { merge: true });
     } catch (e) {}
 
     return newDriver;
@@ -641,7 +676,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const target = updated.find((d) => d.id === driverId);
       if (target) {
-        await setDoc(doc(db, 'drivers', driverId), target, { merge: true });
+        await setDoc(doc(db, 'drivers', driverId), removeUndefinedFields(target), { merge: true });
         
         // Also update corresponding user profile if email, password, name or phone changed
         const userUpdates: Partial<UserProfile> = {};
@@ -651,7 +686,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (updates.password) userUpdates.password = updates.password;
 
         if (Object.keys(userUpdates).length > 0) {
-          await setDoc(doc(db, 'users', driverId), userUpdates, { merge: true });
+          await setDoc(doc(db, 'users', driverId), removeUndefinedFields(userUpdates), { merge: true });
         }
       }
     } catch (e) {}
@@ -680,7 +715,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await deleteDoc(doc(db, 'users', driverId));
       for (const v of updatedVehicles) {
         if (!v.assignedDriverId) {
-          await setDoc(doc(db, 'vehicles', v.id), v, { merge: true });
+          await setDoc(doc(db, 'vehicles', v.id), removeUndefinedFields(v), { merge: true });
         }
       }
     } catch (e) {}
@@ -697,7 +732,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     saveVehicles(updated);
 
     try {
-      await setDoc(doc(db, 'vehicles', id), newVehicle, { merge: true });
+      await setDoc(doc(db, 'vehicles', id), removeUndefinedFields(newVehicle), { merge: true });
     } catch (e) {}
     return newVehicle;
   };
@@ -714,7 +749,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const target = updated.find((v) => v.id === vehicleId);
       if (target) {
-        await setDoc(doc(db, 'vehicles', vehicleId), target, { merge: true });
+        await setDoc(doc(db, 'vehicles', vehicleId), removeUndefinedFields(target), { merge: true });
       }
     } catch (e) {}
   };
@@ -742,7 +777,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await deleteDoc(doc(db, 'vehicles', vehicleId));
       for (const d of updatedDrivers) {
         if (!d.vehicleId) {
-          await setDoc(doc(db, 'drivers', d.id), d, { merge: true });
+          await setDoc(doc(db, 'drivers', d.id), removeUndefinedFields(d), { merge: true });
         }
       }
     } catch (e) {}
@@ -779,10 +814,10 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const targetDriver = updatedDrivers.find((d) => d.id === driverId);
       if (targetDriver) {
-        await setDoc(doc(db, 'drivers', driverId), targetDriver, { merge: true });
+        await setDoc(doc(db, 'drivers', driverId), removeUndefinedFields(targetDriver), { merge: true });
       }
       for (const v of updatedVehicles) {
-        await setDoc(doc(db, 'vehicles', v.id), v, { merge: true });
+        await setDoc(doc(db, 'vehicles', v.id), removeUndefinedFields(v), { merge: true });
       }
     } catch (e) {}
   };
@@ -808,10 +843,10 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       // Clean and overwrite vehicles in Firestore
       for (const v of freshVehicles) {
-        await setDoc(doc(db, 'vehicles', v.id), v);
+        await setDoc(doc(db, 'vehicles', v.id), removeUndefinedFields(v));
       }
       for (const d of freshDrivers) {
-        await setDoc(doc(db, 'drivers', d.id), d, { merge: true });
+        await setDoc(doc(db, 'drivers', d.id), removeUndefinedFields(d), { merge: true });
       }
     } catch (e) {}
   };
@@ -833,7 +868,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     saveCustomers(updated);
 
     try {
-      await setDoc(doc(db, 'users', uid), newCustomer, { merge: true });
+      await setDoc(doc(db, 'users', uid), removeUndefinedFields(newCustomer), { merge: true });
     } catch (e) {}
 
     return newCustomer;
@@ -852,7 +887,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const target = updated.find((c) => c.uid === uid);
       if (target) {
-        await setDoc(doc(db, 'users', uid), target, { merge: true });
+        await setDoc(doc(db, 'users', uid), removeUndefinedFields(target), { merge: true });
       }
     } catch (e) {}
   };
@@ -882,7 +917,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const updatedTrip = updated.find((t) => t.id === tripId);
       if (updatedTrip) {
-        setDoc(doc(db, 'trips', tripId), updatedTrip, { merge: true }).catch(() => {});
+        setDoc(doc(db, 'trips', tripId), removeUndefinedFields(updatedTrip), { merge: true }).catch(() => {});
       }
     } catch (e) {}
   };
@@ -925,7 +960,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           };
 
           try {
-            setDoc(doc(db, 'drivers', d.id), updatedDriverObj, { merge: true }).catch(() => {});
+            setDoc(doc(db, 'drivers', d.id), removeUndefinedFields(updatedDriverObj), { merge: true }).catch(() => {});
           } catch (e) {}
 
           return updatedDriverObj;
@@ -938,7 +973,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const updatedTrip = updated.find((t) => t.id === tripId);
       if (updatedTrip) {
-        await setDoc(doc(db, 'trips', tripId), updatedTrip, { merge: true });
+        await setDoc(doc(db, 'trips', tripId), removeUndefinedFields(updatedTrip), { merge: true });
       }
     } catch (e) {}
   };

@@ -27,13 +27,17 @@ import {
   Car,
   Star,
   DollarSign,
-  HeartHandshake
+  HeartHandshake,
+  AlertTriangle,
+  AlertCircle,
+  Info,
+  Check
 } from 'lucide-react';
 
 export const OrderPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { createTrip, pricing, addTipAndRatingToTrip } = useTrips();
+  const { createTrip, pricing, addTipAndRatingToTrip, trips, drivers } = useTrips();
   const { user, loginAsGuest } = useAuth();
 
   const stateLocation = location.state || {};
@@ -77,6 +81,26 @@ export const OrderPage: React.FC = () => {
   // Booking Result State & Live Sync
   const [bookedTrip, setBookedTrip] = useState<Trip | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
+
+  // Calculate live available drivers in Oslo (Online AND not currently on an active trip)
+  const busyDriverIds = new Set(
+    trips
+      .filter((t) =>
+        ['accepted', 'driver_assigned', 'driver_arriving', 'driver_arrived', 'trip_started', 'active'].includes(t.status)
+      )
+      .map((t) => t.driverId || t.assignedDriverId)
+      .filter(Boolean)
+  );
+
+  const availableDrivers = drivers.filter(
+    (d) => d.isOnline && !busyDriverIds.has(d.id)
+  );
+  const isDriverAvailable = availableDrivers.length > 0;
+
+  // Active live trip synchronized from context or local state
+  const activeBookedTrip = bookedTrip
+    ? (trips.find((t) => t.id === bookedTrip.id || t.tripId === bookedTrip.id) || bookedTrip)
+    : null;
 
   // Rating and Tip State
   const [selectedRating, setSelectedRating] = useState<number>(5);
@@ -158,6 +182,14 @@ export const OrderPage: React.FC = () => {
     e.preventDefault();
     if (!priceDetails || !routeData) return;
 
+    // Check driver availability for direct bookings
+    if (!isPreorder && !isDriverAvailable) {
+      toast.error('Bestilling ikke mulig: Ingen sjåfør er ledig akkurat nå.', {
+        description: 'Du kan bare bestille direkte når en sjåfør er på vakt og ledig. Velg forhåndsbestilling for et senere tidspunkt, eller prøv igjen når en bil er ledig.'
+      });
+      return;
+    }
+
     setSubmitting(true);
 
     // Save guest profile if not logged in
@@ -175,11 +207,11 @@ export const OrderPage: React.FC = () => {
       passengers,
       luggage,
       isPreorder,
-      scheduledTime: isPreorder ? scheduledTime : undefined,
-      notes,
+      scheduledTime: isPreorder ? scheduledTime : '',
+      notes: notes || '',
       distanceKm: routeData.distanceKm,
       durationMinutes: routeData.durationMinutes,
-      routeGeometry: routeData.geometry,
+      routeGeometry: routeData.geometry || '',
       estimatedPrice: priceDetails.totalPrice,
       ratePerKm: priceDetails.ratePerKm,
       startFee: priceDetails.startFee,
@@ -195,9 +227,9 @@ export const OrderPage: React.FC = () => {
   };
 
   const handleSendRatingAndTip = async () => {
-    if (!bookedTrip) return;
+    if (!activeBookedTrip) return;
     const finalTip = customTip ? parseFloat(customTip) || 0 : selectedTip;
-    await addTipAndRatingToTrip(bookedTrip.id, selectedRating, finalTip, reviewComment);
+    await addTipAndRatingToTrip(activeBookedTrip.id, selectedRating, finalTip, reviewComment);
     setRatingSubmitted(true);
     toast.success('Takk for din vurdering og tips!');
   };
@@ -209,7 +241,7 @@ export const OrderPage: React.FC = () => {
       <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8 max-w-7xl w-full mx-auto">
         
         {/* IF BOOKING CONFIRMED - LIVE TRACKING */}
-        {bookedTrip ? (
+        {activeBookedTrip ? (
           <div className="max-w-3xl mx-auto bg-[#121722]/95 border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 backdrop-blur-xl">
             
             {/* TOP HEADER */}
@@ -223,55 +255,57 @@ export const OrderPage: React.FC = () => {
                     LIVE TAXISPORING
                   </span>
                   <h1 className="font-display text-2xl font-bold text-[#F5F2ED]">
-                    {bookedTrip.status === 'searching_driver' && 'Søker ledig sjåfør...'}
-                    {bookedTrip.status === 'driver_assigned' && 'Sjåfør er på vei!'}
-                    {bookedTrip.status === 'driver_arrived' && 'Sjåføren har ankommet!'}
-                    {bookedTrip.status === 'trip_started' && 'Tur pågår...'}
-                    {bookedTrip.status === 'completed' && 'Turen er fullført!'}
+                    {activeBookedTrip.status === 'searching_driver' && 'Søker ledig sjåfør...'}
+                    {activeBookedTrip.status === 'pending' && 'Søker ledig sjåfør...'}
+                    {activeBookedTrip.status === 'requested' && 'Søker ledig sjåfør...'}
+                    {activeBookedTrip.status === 'driver_assigned' && 'Sjåfør er på vei!'}
+                    {activeBookedTrip.status === 'driver_arrived' && 'Sjåføren har ankommet!'}
+                    {activeBookedTrip.status === 'trip_started' && 'Tur pågår...'}
+                    {activeBookedTrip.status === 'completed' && 'Turen er fullført!'}
                   </h1>
                 </div>
               </div>
 
               <div className="text-right">
-                <span className="text-xs text-slate-400 block font-mono">Tur-ID: {bookedTrip.id}</span>
-                <span className="text-sm font-extrabold text-[#D4AF37]">{bookedTrip.estimatedPrice} NOK</span>
+                <span className="text-xs text-slate-400 block font-mono">Tur-ID: {activeBookedTrip.id}</span>
+                <span className="text-sm font-extrabold text-[#D4AF37]">{activeBookedTrip.estimatedPrice} NOK</span>
               </div>
             </div>
 
             {/* LIVE MAP TRACKER WITH MOVING DRIVER LOCATION */}
             <div className="space-y-2 text-left">
               <LeafletMap
-                pickup={bookedTrip.pickup}
-                destination={bookedTrip.destination}
-                driverLocation={bookedTrip.driverLocation}
-                routeGeometry={bookedTrip.routeGeometry}
-                centerLat={bookedTrip.driverLocation?.lat || bookedTrip.pickup.lat}
-                centerLng={bookedTrip.driverLocation?.lng || bookedTrip.pickup.lng}
+                pickup={activeBookedTrip.pickup}
+                destination={activeBookedTrip.destination}
+                driverLocation={activeBookedTrip.driverLocation}
+                routeGeometry={activeBookedTrip.routeGeometry}
+                centerLat={activeBookedTrip.driverLocation?.lat || activeBookedTrip.pickup.lat}
+                centerLng={activeBookedTrip.driverLocation?.lng || activeBookedTrip.pickup.lng}
                 zoom={14}
               />
             </div>
 
             {/* ASSIGNED DRIVER & VEHICLE CARD */}
-            {bookedTrip.driverName && (
+            {activeBookedTrip.driverName && (
               <div className="bg-[#0D121D] p-5 rounded-2xl border border-[#D4AF37]/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5">
                   <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center text-[#D4AF37]">
                     <Car className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-[#F5F2ED]">{bookedTrip.driverName}</h3>
-                    <p className="text-xs text-slate-300">{bookedTrip.vehicleModel || 'Tesla Model Y'}</p>
+                    <h3 className="font-bold text-sm text-[#F5F2ED]">{activeBookedTrip.driverName}</h3>
+                    <p className="text-xs text-slate-300">{activeBookedTrip.vehicleModel || 'Tesla Model Y'}</p>
                     <div className="flex items-center gap-2 mt-0.5 text-[10px] text-[#D4AF37] font-mono">
-                      <span>Bilnr: {bookedTrip.vehicleLicensePlate || 'EP 17891'}</span>
+                      <span>Bilnr: {activeBookedTrip.vehicleLicensePlate || 'EP 17891'}</span>
                       <span>·</span>
-                      <span>Løyve: {bookedTrip.permitNumber || 'OS 10597'}</span>
+                      <span>Løyve: {activeBookedTrip.permitNumber || 'OS 10597'}</span>
                     </div>
                   </div>
                 </div>
 
-                {bookedTrip.driverPhone && (
+                {activeBookedTrip.driverPhone && (
                   <a
-                    href={`tel:${bookedTrip.driverPhone}`}
+                    href={`tel:${activeBookedTrip.driverPhone}`}
                     className="px-5 py-2.5 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] text-slate-950 font-extrabold text-xs uppercase tracking-wider rounded-full shadow-lg flex items-center gap-2"
                   >
                     <Phone className="w-4 h-4" />
@@ -282,7 +316,7 @@ export const OrderPage: React.FC = () => {
             )}
 
             {/* POST-TRIP RATING & TIPPING SECTION (WHEN COMPLETED) */}
-            {bookedTrip.status === 'completed' && !ratingSubmitted && (
+            {activeBookedTrip.status === 'completed' && !ratingSubmitted && (
               <div className="bg-[#0D121D] p-6 rounded-3xl border border-[#D4AF37] space-y-5 animate-slide-up text-center">
                 <div className="space-y-1">
                   <div className="w-10 h-10 rounded-full bg-[#D4AF37]/20 flex items-center justify-center mx-auto text-[#D4AF37]">
@@ -394,6 +428,61 @@ export const OrderPage: React.FC = () => {
               {/* LEFT FORM (7 COLS) */}
               <form onSubmit={handleBookingSubmit} className="lg:col-span-7 bg-[#121722]/90 border border-white/10 rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl backdrop-blur-xl">
                 
+                {/* DRIVER AVAILABILITY LIVE STATUS CARD */}
+                {isDriverAvailable ? (
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                        <Car className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                          <span className="font-bold text-emerald-300">
+                            {availableDrivers.length} sjåfør{availableDrivers.length > 1 ? 'er' : ''} ledig i Oslo nå
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-300">Klar for direkte henting og rask ankomst.</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400 bg-emerald-500/20 px-2.5 py-1 rounded-full border border-emerald-500/40 hidden sm:inline-block">
+                      Aktiv Sentral
+                    </span>
+                  </div>
+                ) : (
+                  <div className="bg-rose-500/10 border-2 border-rose-500/40 rounded-2xl p-4 sm:p-5 flex items-start gap-3.5 text-xs text-rose-200">
+                    <div className="w-9 h-9 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 mt-0.5">
+                      <AlertCircle className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-1.5 flex-1">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-rose-100 text-sm flex items-center gap-2">
+                          Ingen ledige sjåfører akkurat nå
+                        </h4>
+                        <span className="text-[10px] uppercase font-bold bg-rose-500/25 text-rose-300 px-2 py-0.5 rounded-full border border-rose-500/40">
+                          Direkte tur utilgjengelig
+                        </span>
+                      </div>
+                      <p className="text-slate-300 leading-relaxed text-[11px]">
+                        Alle våre sjåfører er for øyeblikket opptatt med andre oppdrag eller utenfor vakt. Du kan bare bestille direkte når en sjåfør er pålogget og ledig.
+                      </p>
+                      <div className="pt-1 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsPreorder(true)}
+                          className="px-3 py-1.5 bg-[#D4AF37] hover:bg-[#E5C158] text-slate-950 font-bold text-[11px] uppercase tracking-wider rounded-lg transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                          Bytt til Forhåndsbestilling
+                        </button>
+                        <span className="text-[10px] text-slate-400">
+                          (Reserver bil for senere tidspunkt)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* CONTACT INFO (GUEST OR LOGGED IN) */}
                 <div className="space-y-4">
                   <h3 className="text-xs font-bold tracking-wider text-[#D4AF37] uppercase flex items-center gap-2">
@@ -547,37 +636,49 @@ export const OrderPage: React.FC = () => {
                     </div>
 
                     <div className="col-span-2">
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Bestill for</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-bold text-slate-400 uppercase">Bestill for</label>
+                        {!isDriverAvailable && (
+                          <span className="text-[10px] text-rose-400 font-bold flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                            Direkte tur utilgjengelig
+                          </span>
+                        )}
+                      </div>
                       <div className="flex gap-2">
                         <button
                           type="button"
                           onClick={() => setIsPreorder(false)}
-                          className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
+                          className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-1.5 ${
                             !isPreorder
-                              ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37]'
+                              ? isDriverAvailable
+                                ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37] shadow-md'
+                                : 'bg-rose-950/40 text-rose-300 border-rose-500/40'
                               : 'bg-[#0D121D] text-slate-300 border-white/10 hover:border-white/20'
                           }`}
                         >
-                          NÅ DIREKTE
+                          <Clock className="w-3.5 h-3.5" />
+                          NÅ DIREKTE {isDriverAvailable ? '(Ledig bil)' : '(Ingen bil)'}
                         </button>
                         <button
                           type="button"
                           onClick={() => setIsPreorder(true)}
-                          className={`flex-1 py-2 px-3 text-xs font-bold rounded-xl border transition-all ${
+                          className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-1.5 ${
                             isPreorder
-                              ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37]'
+                              ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37] shadow-md'
                               : 'bg-[#0D121D] text-slate-300 border-white/10 hover:border-white/20'
                           }`}
                         >
-                          FORHÅNDS
+                          <Calendar className="w-3.5 h-3.5" />
+                          FORHÅNDSBESTILLING
                         </button>
                       </div>
                     </div>
                   </div>
 
                   {isPreorder && (
-                    <div className="pt-2">
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Dato og tidspunkt for henting</label>
+                    <div className="pt-2 bg-white/5 border border-white/10 p-3.5 rounded-2xl space-y-2">
+                      <label className="block text-[11px] font-bold text-[#D4AF37] uppercase">Dato og tidspunkt for henting *</label>
                       <input
                         type="datetime-local"
                         required={isPreorder}
@@ -585,6 +686,9 @@ export const OrderPage: React.FC = () => {
                         onChange={(e) => setScheduledTime(e.target.value)}
                         className="w-full px-3.5 py-2.5 bg-[#0D121D] border border-white/10 rounded-xl text-xs text-[#F5F2ED] focus:outline-none focus:border-[#D4AF37]"
                       />
+                      <p className="text-[10px] text-slate-400">
+                        Vi reserverer og tildeler en ledig bil til det valgte tidspunktet.
+                      </p>
                     </div>
                   )}
 
@@ -628,24 +732,46 @@ export const OrderPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* SUBMIT BUTTON */}
-                <button
-                  type="submit"
-                  disabled={submitting || calculating}
-                  className="w-full py-4 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] hover:brightness-110 text-slate-950 font-extrabold text-sm uppercase tracking-wider rounded-full transition-all shadow-xl shadow-[#D4AF37]/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Sender bestilling...
-                    </>
-                  ) : (
-                    <>
-                      Bekreft bestilling ({priceDetails ? `${priceDetails.totalPrice} NOK` : 'Beregner...'})
-                      <ArrowRight className="w-4 h-4" />
-                    </>
+                {/* SUBMIT BUTTON WITH DRIVER AVAILABILITY CHECK */}
+                <div className="space-y-2.5 pt-2">
+                  <button
+                    type="submit"
+                    disabled={submitting || calculating || (!isPreorder && !isDriverAvailable)}
+                    className={`w-full py-4 rounded-full font-extrabold text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+                      !isPreorder && !isDriverAvailable
+                        ? 'bg-[#151c28] text-slate-400 border border-white/10 cursor-not-allowed opacity-85'
+                        : 'bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] hover:brightness-110 text-slate-950 shadow-xl shadow-[#D4AF37]/20 cursor-pointer'
+                    }`}
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Sender bestilling...
+                      </>
+                    ) : !isPreorder && !isDriverAvailable ? (
+                      <>
+                        <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                        Ingen sjåfør ledig – Kan ikke bestille direkte nå
+                      </>
+                    ) : isPreorder ? (
+                      <>
+                        Bekreft forhåndsbestilling ({priceDetails ? `${priceDetails.totalPrice} NOK` : 'Beregner...'})
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    ) : (
+                      <>
+                        Bekreft og bestill taxi nå ({priceDetails ? `${priceDetails.totalPrice} NOK` : 'Beregner...'})
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+
+                  {!isPreorder && !isDriverAvailable && (
+                    <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-center text-xs text-rose-300">
+                      Direkte bestilling er midlertidig stengt fordi ingen sjåfør er ledig. Klikk på <b>«FORHÅNDSBESTILLING»</b> ovenfor for å bestille for senere, eller vent til en bil logger på.
+                    </div>
                   )}
-                </button>
+                </div>
 
               </form>
 

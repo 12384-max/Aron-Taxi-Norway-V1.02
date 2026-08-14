@@ -4,10 +4,12 @@ import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
 import { OFFICIAL_ASSETS } from '../constants/assets';
 import { searchAddresses, GeocodeResult } from '../services/osrm';
-import { MapPin, Navigation, ArrowRight, Shield, Clock, Plane, Calendar, CreditCard, Sparkles } from 'lucide-react';
+import { useTrips } from '../context/TripContext';
+import { MapPin, Navigation, ArrowRight, Shield, Clock, Plane, Calendar, CreditCard, Sparkles, Car, AlertCircle } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
+  const { drivers, trips } = useTrips();
 
   const [fromQuery, setFromQuery] = useState('');
   const [toQuery, setToQuery] = useState('');
@@ -17,6 +19,21 @@ export const HomePage: React.FC = () => {
 
   const [selectedFrom, setSelectedFrom] = useState<GeocodeResult | null>(null);
   const [selectedTo, setSelectedTo] = useState<GeocodeResult | null>(null);
+
+  // Calculate live available drivers
+  const busyDriverIds = new Set(
+    trips
+      .filter((t) =>
+        ['accepted', 'driver_assigned', 'driver_arriving', 'driver_arrived', 'trip_started', 'active'].includes(t.status)
+      )
+      .map((t) => t.driverId || t.assignedDriverId)
+      .filter(Boolean)
+  );
+
+  const availableDrivers = drivers.filter(
+    (d) => d.isOnline && !busyDriverIds.has(d.id)
+  );
+  const isDriverAvailable = availableDrivers.length > 0;
 
   const handleFromSearch = async (val: string) => {
     setFromQuery(val);
@@ -74,9 +91,26 @@ export const HomePage: React.FC = () => {
           <div className="lg:col-span-7 space-y-6 text-left">
             
             {/* SUBTITLE BADGE */}
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-[#D4AF37]/30 text-[#D4AF37] text-xs font-semibold tracking-widest uppercase backdrop-blur-md">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#D4AF37] animate-ping" />
-              ARON TAXI NORWAY · OSLO · SIDEN 2025
+            <div className="inline-flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/5 border border-[#D4AF37]/30 text-xs font-semibold tracking-widest uppercase backdrop-blur-md">
+              {isDriverAvailable ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="text-emerald-400 font-bold">
+                    {availableDrivers.length} {availableDrivers.length === 1 ? 'bil' : 'biler'} ledig i Oslo nå
+                  </span>
+                  <span className="text-slate-500">|</span>
+                  <span className="text-[#D4AF37]">ARON TAXI NORWAY</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-rose-500" />
+                  <span className="text-rose-400 font-bold">
+                    Ingen biler ledig nå (Forhåndsbestilling åpen)
+                  </span>
+                  <span className="text-slate-500">|</span>
+                  <span className="text-[#D4AF37]">ARON TAXI</span>
+                </>
+              )}
             </div>
 
             {/* MAIN HEADLINE */}
@@ -234,9 +268,13 @@ export const HomePage: React.FC = () => {
 
               {/* FOOTER NOTE IN CARD */}
               <div className="mt-5 pt-4 border-t border-white/10 flex items-center justify-between text-[11px] text-slate-400 font-medium">
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5 text-[#D4AF37]" />
-                  Vanligvis 3-6 min ventetid
+                <span className="flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${isDriverAvailable ? 'bg-emerald-400 animate-ping' : 'bg-rose-500'}`} />
+                  {isDriverAvailable ? (
+                    <span className="text-emerald-300 font-semibold">{availableDrivers.length} bil{availableDrivers.length > 1 ? 'er' : ''} ledig nå</span>
+                  ) : (
+                    <span className="text-rose-300 font-semibold">Forhåndsbestilling åpen</span>
+                  )}
                 </span>
                 <span className="flex items-center gap-1">
                   <Shield className="w-3.5 h-3.5 text-emerald-400" />
