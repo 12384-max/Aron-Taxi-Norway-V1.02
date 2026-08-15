@@ -60,11 +60,14 @@ export interface Trip {
   // Dynamic Route Metrics
   distanceKm: number;
   durationMinutes: number;
-  routeGeometry?: [number, number][]; // [lat, lng] points for polyline
+  routeGeometry?: ([number, number] | { lat: number; lng: number })[]; // [lat, lng] or {lat, lng} points for polyline
   
   // Financials
   estimatedPrice: number;
   finalPrice?: number;
+  originalPrice?: number;
+  discountAmount?: number;
+  couponCode?: string;
   ratePerKm: number;
   startFee: number;
   airportFee?: number;
@@ -76,6 +79,17 @@ export interface Trip {
   paymentMethod: 'vipps' | 'card' | 'apple_pay' | 'cash' | 'invoice';
   paymentStatus: 'pending' | 'completed';
   
+  // Luxury & Vehicle Tier
+  vehicleCategory?: 'vip_black' | 'comfort_eco' | 'airport_vip';
+  ridePreferences?: {
+    quietRide?: boolean;
+    temperature?: 'cool' | 'warm' | 'normal';
+    luggageHelp?: boolean;
+    childSeat?: boolean;
+    petFriendly?: boolean;
+  };
+  flightNumber?: string;
+
   // Driver & Vehicle
   driverId?: string;
   assignedDriverId?: string;
@@ -181,4 +195,99 @@ export interface DriverExpense {
   date: string;
 }
 
+export interface Invoice {
+  id: string;
+  tripId?: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  companyName?: string;
+  orgNumber?: string;
+  kidNumber: string;
+  issueDate: string;
+  dueDate: string;
+  pickupAddress: string;
+  destinationAddress: string;
+  distanceKm?: number;
+  durationMinutes?: number;
+  vehiclePlate?: string;
+  permitNumber?: string;
+  amountExVat: number;
+  vatRate: number;
+  vatAmount: number;
+  totalAmount: number;
+  status: 'paid' | 'unpaid' | 'overdue' | 'credited';
+  paymentMethod: 'invoice' | 'vipps' | 'card' | 'bank_transfer' | 'cash';
+  notes?: string;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number;
+  maxUses: number;
+  usedCount: number;
+  expiryDate: string;
+  isActive: boolean;
+  minTripAmount?: number;
+  description: string;
+}
+
+export interface BroadcastNotification {
+  id: string;
+  title: string;
+  message: string;
+  target: 'all' | 'drivers' | 'passengers';
+  channel: 'push' | 'sms' | 'system';
+  sentAt: string;
+  deliveredCount: number;
+}
+
+export interface SurgeZone {
+  id: string;
+  name: string;
+  multiplier: number;
+  radiusKm: number;
+  centerLat: number;
+  centerLng: number;
+  lat?: number;
+  lng?: number;
+  isActive: boolean;
+  category: 'Sentrum' | 'Flyplass' | 'Natteliv' | 'Arrangement' | 'Vær';
+}
+
+export interface CorporatePartner {
+  id: string;
+  companyName: string;
+  orgNumber: string;
+  contactPerson: string;
+  email: string;
+  phone: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  billingAddress?: string;
+  billingCycle?: 'monthly' | 'biweekly';
+  creditLimit: number;
+  currentBalance: number;
+  discountPercent: number;
+  status: 'active' | 'pending' | 'suspended';
+  createdAt: string;
+}
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  timestamp: string;
+  type: 'trip_created' | 'driver_assigned' | 'driver_arrived' | 'trip_started' | 'trip_completed' | 'trip_cancelled' | 'emergency' | 'broadcast' | 'info';
+  targetRole: 'all' | 'admin' | 'driver' | 'customer';
+  targetUserId?: string;
+  tripId?: string;
+  isRead: boolean;
+  actionUrl?: string;
+  soundType?: 'request' | 'accepted' | 'arrived' | 'started' | 'completed' | 'cancel' | 'emergency' | 'ping';
+}
+
 export type Language = 'no' | 'en';
+

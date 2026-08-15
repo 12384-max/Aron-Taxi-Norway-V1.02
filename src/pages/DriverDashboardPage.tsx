@@ -772,9 +772,9 @@ export const DriverDashboardPage: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-[#34D186] animate-pulse" />
                       <span className="text-xs font-black tracking-wider text-[#34D186] uppercase">
-                        {activeTrip.status === 'driver_assigned' && '1. KJØR TIL HENTESTED'}
+                        {(activeTrip.status === 'driver_assigned' || activeTrip.status === 'accepted' || activeTrip.status === 'driver_arriving') && '1. KJØR TIL HENTESTED'}
                         {activeTrip.status === 'driver_arrived' && '2. VENTER PÅ PASSASJER'}
-                        {activeTrip.status === 'trip_started' && '3. TUR PÅGÅR TIL DESTINASJON'}
+                        {(activeTrip.status === 'trip_started' || activeTrip.status === 'active') && '3. TUR PÅGÅR TIL DESTINASJON'}
                       </span>
                     </div>
                     <span className="font-mono font-bold text-xs text-slate-300">
@@ -787,11 +787,11 @@ export const DriverDashboardPage: React.FC = () => {
                     <div className="flex justify-between items-center bg-black/40 p-3 rounded-2xl border border-white/5">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-2xl bg-[#34D186]/15 border border-[#34D186]/40 flex items-center justify-center text-[#34D186] font-black text-sm">
-                          {activeTrip.customerName[0]}
+                          {activeTrip.customerName?.[0] || 'P'}
                         </div>
                         <div>
-                          <p className="text-xs font-black text-white">{activeTrip.customerName}</p>
-                          <p className="text-[10px] text-slate-400">{activeTrip.passengers} passasjerer · {activeTrip.luggage} kolli</p>
+                          <p className="text-xs font-black text-white">{activeTrip.customerName || 'Passasjer'}</p>
+                          <p className="text-[10px] text-slate-400">{activeTrip.passengers || 1} passasjerer · {activeTrip.luggage || 0} kolli</p>
                         </div>
                       </div>
 
@@ -815,12 +815,12 @@ export const DriverDashboardPage: React.FC = () => {
                         <MapPin className="w-4 h-4 text-[#34D186] shrink-0 mt-0.5" />
                         <div className="flex-1">
                           <span className="text-[9px] uppercase font-black text-slate-500 block">Hentested</span>
-                          <span className="text-white font-bold leading-tight">{activeTrip.pickup.address}</span>
+                          <span className="text-white font-bold leading-tight">{activeTrip.pickup?.address || 'Henteadresse'}</span>
                         </div>
-                        {activeTrip.status === 'driver_assigned' && (
+                        {(activeTrip.status === 'driver_assigned' || activeTrip.status === 'accepted' || activeTrip.status === 'driver_arriving') && (
                           <button
-                            onClick={() => openExternalNavigation(activeTrip.pickup.address, activeTrip.pickup.lat, activeTrip.pickup.lng)}
-                            className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-[#34D186] text-[10px] font-bold rounded-lg flex items-center gap-1 shrink-0"
+                            onClick={() => openExternalNavigation(activeTrip.pickup?.address || '', activeTrip.pickup?.lat, activeTrip.pickup?.lng)}
+                            className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-[#34D186] text-[10px] font-bold rounded-lg flex items-center gap-1 shrink-0 cursor-pointer"
                           >
                             <Navigation className="w-3 h-3" />
                             GPS
@@ -832,12 +832,12 @@ export const DriverDashboardPage: React.FC = () => {
                         <Navigation className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                         <div className="flex-1">
                           <span className="text-[9px] uppercase font-black text-slate-500 block">Destinasjon</span>
-                          <span className="text-white font-bold leading-tight">{activeTrip.destination.address}</span>
+                          <span className="text-white font-bold leading-tight">{activeTrip.destination?.address || 'Destinasjonsadresse'}</span>
                         </div>
-                        {activeTrip.status === 'trip_started' && (
+                        {(activeTrip.status === 'trip_started' || activeTrip.status === 'active') && (
                           <button
-                            onClick={() => openExternalNavigation(activeTrip.destination.address, activeTrip.destination.lat, activeTrip.destination.lng)}
-                            className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-[#34D186] text-[10px] font-bold rounded-lg flex items-center gap-1 shrink-0"
+                            onClick={() => openExternalNavigation(activeTrip.destination?.address || '', activeTrip.destination?.lat, activeTrip.destination?.lng)}
+                            className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-[#34D186] text-[10px] font-bold rounded-lg flex items-center gap-1 shrink-0 cursor-pointer"
                           >
                             <Navigation className="w-3 h-3" />
                             GPS
@@ -869,7 +869,7 @@ export const DriverDashboardPage: React.FC = () => {
 
                   {/* ACTIVE ACTION BUTTONS */}
                   <div className="pt-1">
-                    {activeTrip.status === 'driver_assigned' && (
+                    {(activeTrip.status === 'driver_assigned' || activeTrip.status === 'accepted' || activeTrip.status === 'driver_arriving') && (
                       <button
                         onClick={() => handleArrivedAtPickup(activeTrip.id)}
                         className="w-full py-4 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black uppercase text-xs tracking-wider rounded-2xl shadow-xl flex items-center justify-center gap-2 cursor-pointer"
@@ -889,7 +889,7 @@ export const DriverDashboardPage: React.FC = () => {
                       </button>
                     )}
 
-                    {activeTrip.status === 'trip_started' && (
+                    {(activeTrip.status === 'trip_started' || activeTrip.status === 'active') && (
                       <button
                         onClick={() => handleCompleteTrip(activeTrip)}
                         className="w-full py-4 bg-gradient-to-r from-emerald-400 via-[#34D186] to-teal-400 hover:brightness-110 text-slate-950 font-black uppercase text-xs tracking-wider rounded-2xl shadow-xl flex items-center justify-center gap-2 cursor-pointer"
@@ -948,7 +948,7 @@ export const DriverDashboardPage: React.FC = () => {
                         <MapPin className="w-4 h-4 text-[#34D186] shrink-0 mt-0.5" />
                         <div>
                           <span className="text-[9px] uppercase font-bold text-slate-500 block">Hentested</span>
-                          <p className="text-white font-bold leading-tight">{pendingTrips[0].pickup.address}</p>
+                          <p className="text-white font-bold leading-tight">{pendingTrips[0]?.pickup?.address || 'Henteadresse'}</p>
                         </div>
                       </div>
 
@@ -956,7 +956,7 @@ export const DriverDashboardPage: React.FC = () => {
                         <Navigation className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
                         <div>
                           <span className="text-[9px] uppercase font-bold text-slate-500 block">Destinasjon</span>
-                          <p className="text-white font-bold leading-tight">{pendingTrips[0].destination.address}</p>
+                          <p className="text-white font-bold leading-tight">{pendingTrips[0]?.destination?.address || 'Destinasjonsadresse'}</p>
                         </div>
                       </div>
                     </div>
@@ -1119,11 +1119,11 @@ export const DriverDashboardPage: React.FC = () => {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-black/40 p-3 rounded-2xl border border-white/5">
                         <div>
                           <span className="text-[9px] uppercase font-bold text-slate-500 block">Fra</span>
-                          <span className="text-slate-200 font-semibold">{t.pickup.address}</span>
+                          <span className="text-slate-200 font-semibold">{t.pickup?.address || '–'}</span>
                         </div>
                         <div>
                           <span className="text-[9px] uppercase font-bold text-slate-500 block">Til</span>
-                          <span className="text-slate-200 font-semibold">{t.destination.address}</span>
+                          <span className="text-slate-200 font-semibold">{t.destination?.address || '–'}</span>
                         </div>
                       </div>
 
@@ -1176,8 +1176,8 @@ export const DriverDashboardPage: React.FC = () => {
                       </div>
 
                       <div className="text-xs text-slate-300 space-y-1">
-                        <p><strong className="text-slate-400">Fra:</strong> {trip.pickup.address}</p>
-                        <p><strong className="text-slate-400">Til:</strong> {trip.destination.address}</p>
+                        <p><strong className="text-slate-400">Fra:</strong> {trip.pickup?.address || '–'}</p>
+                        <p><strong className="text-slate-400">Til:</strong> {trip.destination?.address || '–'}</p>
                       </div>
 
                       <div className="flex justify-between items-center text-[11px] text-slate-400 pt-2 border-t border-white/5">

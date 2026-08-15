@@ -5,6 +5,7 @@ import { LanguageProvider } from './context/LanguageContext';
 import { AuthProvider } from './context/AuthContext';
 import { TripProvider } from './context/TripContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { NotificationBanner } from './components/NotificationBanner';
 
 import { HomePage } from './pages/HomePage';
 import { OrderPage } from './pages/OrderPage';
@@ -39,6 +40,7 @@ export function App() {
       <LanguageProvider>
         <AuthProvider>
           <TripProvider>
+            <NotificationBanner />
             <Routes>
               {/* PUBLIC PAGES */}
               <Route path="/" element={<HomePage />} />

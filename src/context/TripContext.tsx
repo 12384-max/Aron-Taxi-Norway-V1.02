@@ -5,6 +5,7 @@ import { db } from '../services/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, runTransaction, getDoc } from 'firebase/firestore';
 import { queryTripsFromFirestore, TripQueryFilter, TripQueryResult } from '../services/tripQueryService';
 import { removeUndefinedFields } from '../utils/firestoreHelper';
+import { notificationService } from '../services/notificationService';
 
 const INITIAL_CUSTOMERS: UserProfile[] = [
   {
@@ -271,6 +272,40 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const updatedTrips = [newTrip, ...trips];
     saveTrips(updatedTrips);
 
+    // 1. Notify Admin (push + chime + in-app)
+    notificationService.notify({
+      title: '🚕 Ny tur bestilt!',
+      message: `${newTrip.customerName || 'Passasjer'} har bestilt tur fra ${newTrip.pickup?.address || 'Hentested'} til ${newTrip.destination?.address || 'Destinasjon'} (${newTrip.estimatedPrice} kr)`,
+      type: 'trip_created',
+      targetRole: 'admin',
+      tripId: id,
+      actionUrl: '/admin',
+      soundType: 'request'
+    });
+
+    // 2. Notify Drivers (chime + push on mobile/PC)
+    notificationService.notify({
+      title: '⚡ Ny turforespørsel tilgjengelig',
+      message: `${newTrip.pickup?.address || 'Oslo'} → ${newTrip.destination?.address || 'Destinasjon'} (${newTrip.estimatedPrice} kr)`,
+      type: 'trip_created',
+      targetRole: 'driver',
+      tripId: id,
+      actionUrl: '/driver',
+      soundType: 'request'
+    });
+
+    // 3. Notify Customer
+    notificationService.notify({
+      title: '✅ Bestilling bekreftet',
+      message: `Turforespørsel registrert. Vi søker etter nærmeste ledige sjåfør i Oslo.`,
+      type: 'trip_created',
+      targetRole: 'customer',
+      targetUserId: newTrip.customerId,
+      tripId: id,
+      actionUrl: '/konto',
+      soundType: 'ping'
+    });
+
     try {
       const cleanData = removeUndefinedFields(newTrip);
       await setDoc(doc(db, 'trips', id), cleanData, { merge: true });
@@ -289,6 +324,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const assignDriverToTrip = (tripId: string, driverId: string) => {
     const targetDriver = drivers.find((d) => d.id === driverId);
     const targetVehicle = vehicles.find((v) => v.id === targetDriver?.vehicleId) || vehicles[0];
+    const targetTrip = trips.find((t) => t.id === tripId);
 
     const now = new Date().toISOString();
     const updated = trips.map((t) => {
@@ -313,6 +349,43 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     saveTrips(updated);
 
+    // Notify Customer on PC and mobile
+    if (targetDriver) {
+      notificationService.notify({
+        title: '🚗 Sjåfør på vei!',
+        message: `${targetDriver.name} i ${targetDriver.vehicleName || targetVehicle?.model || 'Tesla'} (${targetDriver.vehiclePlate || targetVehicle?.licensePlate || ''}) er på vei til hentepunktet.`,
+        type: 'driver_assigned',
+        targetRole: 'customer',
+        targetUserId: targetTrip?.customerId,
+        tripId: tripId,
+        actionUrl: '/konto',
+        soundType: 'accepted'
+      });
+
+      // Notify Admin
+      notificationService.notify({
+        title: '👤 Sjåfør tildelt tur',
+        message: `${targetDriver.name} er tildelt tur ${tripId} (${targetTrip?.customerName || 'Kunde'}).`,
+        type: 'driver_assigned',
+        targetRole: 'admin',
+        tripId: tripId,
+        actionUrl: '/admin',
+        soundType: 'accepted'
+      });
+
+      // Notify Driver
+      notificationService.notify({
+        title: '🎯 Oppdrag bekreftet',
+        message: `Du er tildelt tur for ${targetTrip?.customerName || 'kunde'} til ${targetTrip?.pickup?.address || 'Hentested'}.`,
+        type: 'driver_assigned',
+        targetRole: 'driver',
+        targetUserId: driverId,
+        tripId: tripId,
+        actionUrl: '/driver',
+        soundType: 'accepted'
+      });
+    }
+
     try {
       const updatedTrip = updated.find((t) => t.id === tripId);
       if (updatedTrip) {
@@ -320,6 +393,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     } catch (e) {}
   };
+
 
   // Atomic Firestore Concurrency for accepting a trip (ensures only 1 driver gets the ride)
   const acceptTripAtomic = async (tripId: string, driverId: string): Promise<{ success: boolean; error?: string }> => {
@@ -458,6 +532,17 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const updated = [newAlert, ...emergencyAlerts];
     saveEmergencyAlerts(updated);
 
+    // Emergency Notification with Siren sound and device vibration
+    notificationService.notify({
+      title: '🚨 NØDVARSEL: Taus alarm utløst!',
+      message: `Sjåfør ${targetDriver?.name || 'Aron Sjåfør'} (${targetDriver?.vehiclePlate || targetVehicle?.licensePlate || 'Bil'}) har utløst alarm!`,
+      type: 'emergency',
+      targetRole: 'admin',
+      actionUrl: '/admin',
+      soundType: 'emergency',
+      requireInteraction: true
+    });
+
     try {
       await setDoc(doc(db, 'emergency_alerts', id), removeUndefinedFields(newAlert), { merge: true });
     } catch (err) {
@@ -466,6 +551,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     return newAlert;
   };
+
 
   const resolveEmergencyAlert = async (alertId: string, resolvedBy: string = 'Sentral / Dispatch') => {
     const now = new Date().toISOString();
@@ -557,6 +643,129 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
 
     saveTrips(updated);
+
+    // Real-time notifications for customer, driver, and admin across devices
+    if (status === 'driver_arrived') {
+      // Customer: friendly chime & double buzz
+      notificationService.notify({
+        title: '📍 Sjåføren er fremme!',
+        message: `${targetTrip?.driverName || 'Sjåføren'} venter nå utenfor hentepunktet (${targetTrip?.pickup?.address || 'adressen'}).`,
+        type: 'driver_arrived',
+        targetRole: 'customer',
+        targetUserId: targetTrip?.customerId,
+        tripId: tripId,
+        actionUrl: '/konto',
+        soundType: 'arrived'
+      });
+
+      // Admin
+      notificationService.notify({
+        title: '📍 Sjåfør ankommet hentepunkt',
+        message: `${targetTrip?.driverName || 'Sjåfør'} har ankommet for tur ${tripId} (${targetTrip?.customerName || 'Kunde'}).`,
+        type: 'driver_arrived',
+        targetRole: 'admin',
+        tripId: tripId,
+        actionUrl: '/admin',
+        soundType: 'ping'
+      });
+    } else if (status === 'in_progress' || status === 'picked_up') {
+      // Customer: trip started acceleration tone
+      notificationService.notify({
+        title: '🛣️ Turen har startet',
+        message: `God reise! Turen mot ${targetTrip?.destination?.address || 'destinasjonen'} er påbegynt.`,
+        type: 'trip_started',
+        targetRole: 'customer',
+        targetUserId: targetTrip?.customerId,
+        tripId: tripId,
+        actionUrl: '/konto',
+        soundType: 'started'
+      });
+
+      // Admin
+      notificationService.notify({
+        title: '⏱️ Tur påbegynt',
+        message: `Tur ${tripId} med ${targetTrip?.driverName || 'Sjåfør'} er i gang mot ${targetTrip?.destination?.address || 'destinasjon'}.`,
+        type: 'trip_started',
+        targetRole: 'admin',
+        tripId: tripId,
+        actionUrl: '/admin',
+        soundType: 'ping'
+      });
+    } else if (status === 'completed') {
+      const price = targetTrip?.estimatedPrice || 0;
+      const driverEarn = Math.round(price * 0.85);
+
+      // Customer
+      notificationService.notify({
+        title: '🎉 Turen er fullført!',
+        message: `Takk for at du reiste med Aron Taxi! Kvittering på ${price} kr er klar på profilen din.`,
+        type: 'trip_completed',
+        targetRole: 'customer',
+        targetUserId: targetTrip?.customerId,
+        tripId: tripId,
+        actionUrl: '/konto',
+        soundType: 'completed'
+      });
+
+      // Driver
+      notificationService.notify({
+        title: '💰 Tur fullført!',
+        message: `Godt levert! Du tjente ${driverEarn} kr for dette oppdraget.`,
+        type: 'trip_completed',
+        targetRole: 'driver',
+        targetUserId: targetTrip?.driverId,
+        tripId: tripId,
+        actionUrl: '/driver',
+        soundType: 'completed'
+      });
+
+      // Admin
+      notificationService.notify({
+        title: '✅ Tur fullført',
+        message: `Tur ${tripId} fullført av ${targetTrip?.driverName || 'Sjåfør'}. Beløp: ${price} kr.`,
+        type: 'trip_completed',
+        targetRole: 'admin',
+        tripId: tripId,
+        actionUrl: '/admin',
+        soundType: 'completed'
+      });
+    } else if (status === 'cancelled') {
+      // Customer
+      notificationService.notify({
+        title: '❌ Tur kansellert',
+        message: `Turen ${tripId} ble kansellert.`,
+        type: 'trip_cancelled',
+        targetRole: 'customer',
+        targetUserId: targetTrip?.customerId,
+        tripId: tripId,
+        soundType: 'cancel'
+      });
+
+      // Driver
+      if (targetTrip?.driverId) {
+        notificationService.notify({
+          title: '❌ Tur kansellert av kunden',
+          message: `Oppdraget ${tripId} ble avbrutt.`,
+          type: 'trip_cancelled',
+          targetRole: 'driver',
+          targetUserId: targetTrip?.driverId,
+          tripId: tripId,
+          soundType: 'cancel'
+        });
+      }
+
+      // Admin
+      notificationService.notify({
+        title: '⚠️ Tur kansellert',
+        message: `Tur ${tripId} (${targetTrip?.customerName || 'Kunde'}) ble kansellert.`,
+        type: 'trip_cancelled',
+        targetRole: 'admin',
+        tripId: tripId,
+        actionUrl: '/admin',
+        soundType: 'cancel'
+      });
+    }
+
 
     if (status === 'completed' && targetTrip?.driverId) {
       const price = targetTrip.estimatedPrice;

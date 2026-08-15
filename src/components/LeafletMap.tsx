@@ -15,7 +15,7 @@ interface LeafletMapProps {
   pickup?: { lat: number; lng: number; address?: string };
   destination?: { lat: number; lng: number; address?: string };
   driverLocation?: { lat: number; lng: number; heading?: number };
-  routeGeometry?: [number, number][];
+  routeGeometry?: ([number, number] | { lat: number; lng: number })[];
   hotspots?: HotspotItem[];
   showHotspots?: boolean;
   centerLat?: number;
@@ -193,16 +193,27 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
 
     // Route Polyline
     if (routeGeometry && routeGeometry.length > 0) {
-      const polyline = L.polyline(routeGeometry, {
-        color: '#34D186',
-        weight: 6,
-        opacity: 0.9,
-        lineCap: 'round',
-        lineJoin: 'round'
-      });
-      layerGroup.addLayer(polyline);
+      const validPoints: [number, number][] = [];
+      for (const pt of routeGeometry as any[]) {
+        if (Array.isArray(pt) && pt.length >= 2 && typeof pt[0] === 'number' && typeof pt[1] === 'number') {
+          validPoints.push([pt[0], pt[1]]);
+        } else if (pt && typeof pt.lat === 'number' && typeof pt.lng === 'number') {
+          validPoints.push([pt.lat, pt.lng]);
+        }
+      }
 
-      routeGeometry.forEach(([lat, lng]) => bounds.extend([lat, lng]));
+      if (validPoints.length > 0) {
+        const polyline = L.polyline(validPoints, {
+          color: '#34D186',
+          weight: 6,
+          opacity: 0.9,
+          lineCap: 'round',
+          lineJoin: 'round'
+        });
+        layerGroup.addLayer(polyline);
+
+        validPoints.forEach(([lat, lng]) => bounds.extend([lat, lng]));
+      }
     }
 
     // ONLY auto-fit view if:

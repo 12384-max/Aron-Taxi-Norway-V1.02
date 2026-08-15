@@ -4,6 +4,7 @@ import { OFFICIAL_ASSETS } from '../constants/assets';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { Menu, X, Car, User, Globe, LogIn, ChevronRight } from 'lucide-react';
+import { NotificationBell } from './NotificationBell';
 
 export const Header: React.FC = () => {
   const { lang, setLang, t } = useLanguage();
@@ -75,6 +76,9 @@ export const Header: React.FC = () => {
           {/* RIGHT ACTIONS */}
           <div className="hidden md:flex items-center space-x-3">
             
+            {/* NOTIFICATION BELL */}
+            <NotificationBell />
+
             {/* LANGUAGE TOGGLE */}
             <button
               onClick={() => setLang(lang === 'no' ? 'en' : 'no')}
@@ -141,7 +145,8 @@ export const Header: React.FC = () => {
           </div>
 
           {/* MOBILE MENU TOGGLE */}
-          <div className="flex md:hidden items-center space-x-3">
+          <div className="flex md:hidden items-center space-x-2">
+            <NotificationBell />
             <button
               onClick={() => setLang(lang === 'no' ? 'en' : 'no')}
               className="p-2 text-xs font-bold text-slate-300 bg-white/5 rounded-full border border-white/10"

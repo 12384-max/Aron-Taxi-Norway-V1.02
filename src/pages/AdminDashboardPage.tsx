@@ -61,9 +61,24 @@ import {
   Zap,
   Shield,
   UserCheck,
-  ExternalLink
+  ExternalLink,
+  Tag,
+  Bell,
+  Building2,
+  FileSpreadsheet,
+  BarChart3,
+  Flame,
+  FileText
 } from 'lucide-react';
 import { queryTripsFromFirestore } from '../services/tripQueryService';
+import { AdminOverviewTab } from '../components/admin/AdminOverviewTab';
+import { AdminSurgeTab } from '../components/admin/AdminSurgeTab';
+import { AdminPartnersTab } from '../components/admin/AdminPartnersTab';
+import { AdminInvoicesTab } from '../components/admin/AdminInvoicesTab';
+import { AdminCouponsTab } from '../components/admin/AdminCouponsTab';
+import { AdminNotificationsTab } from '../components/admin/AdminNotificationsTab';
+import { AdminReportsTab } from '../components/admin/AdminReportsTab';
+import { Invoice, Coupon, BroadcastNotification, SurgeZone, CorporatePartner } from '../types';
 
 export const AdminDashboardPage: React.FC = () => {
   const { 
@@ -95,9 +110,316 @@ export const AdminDashboardPage: React.FC = () => {
   const navigate = useNavigate();
 
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'trips' | 'drivers' | 'customers' | 'vehicles' | 'pricing'>('overview');
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'trips' | 'invoices' | 'drivers' | 'customers' | 'vehicles' | 'surge' | 'partners' | 'coupons' | 'reports' | 'notifications' | 'pricing'
+  >('overview');
+  const [overviewDateRange, setOverviewDateRange] = useState<'day' | 'week' | 'month' | 'total'>('month');
   const [tripFilter, setTripFilter] = useState<string>('all');
   const [selectedInvoiceTrip, setSelectedInvoiceTrip] = useState<Trip | null>(null);
+
+  // 1. INVOICES STATE
+  const [invoices, setInvoices] = useState<Invoice[]>(() => {
+    const saved = localStorage.getItem('aron_admin_invoices');
+    if (saved) return JSON.parse(saved);
+    return [
+      {
+        id: 'FAKT-2026-1001',
+        customerName: 'Grand Hotel Oslo',
+        customerEmail: 'booking@grand.no',
+        customerPhone: '+47 23 21 20 00',
+        companyName: 'Grand Hotel AS',
+        orgNumber: '982 112 334',
+        kidNumber: '2026880012',
+        issueDate: '2026-08-01',
+        dueDate: '2026-08-15',
+        pickupAddress: 'Karl Johans gate 31, 0159 Oslo',
+        destinationAddress: 'Oslo Lufthavn Gardermoen',
+        distanceKm: 48,
+        amountExVat: 3473,
+        vatRate: 12,
+        vatAmount: 417,
+        totalAmount: 3890,
+        status: 'paid',
+        paymentMethod: 'invoice',
+        notes: 'VIP transport direktør og gjester'
+      },
+      {
+        id: 'FAKT-2026-1002',
+        customerName: 'Radisson Blu Plaza',
+        customerEmail: 'dispatch@radissonplaza.no',
+        customerPhone: '+47 22 05 80 00',
+        companyName: 'Radisson Plaza Hotel Drift AS',
+        orgNumber: '971 445 667',
+        kidNumber: '2026880013',
+        issueDate: '2026-08-10',
+        dueDate: '2026-08-24',
+        pickupAddress: 'Sonja Henies plass 3, 0185 Oslo',
+        destinationAddress: 'Fornebu IT Park, Snarøyveien',
+        distanceKm: 14,
+        amountExVat: 5759,
+        vatRate: 12,
+        vatAmount: 691,
+        totalAmount: 6450,
+        status: 'unpaid',
+        paymentMethod: 'invoice',
+        notes: 'Samlefaktura uke 32 konferansegjester'
+      },
+      {
+        id: 'FAKT-2026-1003',
+        customerName: 'Henrik Solberg',
+        customerEmail: 'henrik.solberg@gmail.com',
+        customerPhone: '+47 912 34 567',
+        kidNumber: '2026880014',
+        issueDate: '2026-08-12',
+        dueDate: '2026-08-26',
+        pickupAddress: 'Frognerveien 12, 0263 Oslo',
+        destinationAddress: 'Oslo S, Jernbanetorget',
+        distanceKm: 4.2,
+        amountExVat: 795,
+        vatRate: 12,
+        vatAmount: 95,
+        totalAmount: 890,
+        status: 'paid',
+        paymentMethod: 'vipps'
+      }
+    ];
+  });
+
+  // 2. SURGE ZONES STATE
+  const [surgeZones, setSurgeZones] = useState<SurgeZone[]>(() => {
+    const saved = localStorage.getItem('aron_admin_surge');
+    if (saved) return JSON.parse(saved);
+    return [
+      { id: 'sz1', name: 'Oslo S & Jernbanetorget', multiplier: 1.4, radiusKm: 1.5, centerLat: 59.9112, centerLng: 10.7505, lat: 59.9112, lng: 10.7505, isActive: true, category: 'Sentrum' },
+      { id: 'sz2', name: 'Oslo Lufthavn Gardermoen', multiplier: 1.2, radiusKm: 4.0, centerLat: 60.1975, centerLng: 11.1004, lat: 60.1975, lng: 11.1004, isActive: false, category: 'Flyplass' },
+      { id: 'sz3', name: 'Aker Brygge & Tjuvholmen', multiplier: 1.5, radiusKm: 1.2, centerLat: 59.9098, centerLng: 10.7247, lat: 59.9098, lng: 10.7247, isActive: true, category: 'Natteliv' },
+      { id: 'sz4', name: 'Majorstuen & Bogstadveien', multiplier: 1.3, radiusKm: 1.5, centerLat: 59.9304, centerLng: 10.7144, lat: 59.9304, lng: 10.7144, isActive: false, category: 'Sentrum' },
+      { id: 'sz5', name: 'Telenor Arena & Fornebu', multiplier: 1.3, radiusKm: 2.0, centerLat: 59.9022, centerLng: 10.6234, lat: 59.9022, lng: 10.6234, isActive: false, category: 'Arrangement' }
+    ];
+  });
+
+  // 3. CORPORATE PARTNERS STATE
+  const [partners, setPartners] = useState<CorporatePartner[]>(() => {
+    const saved = localStorage.getItem('aron_admin_partners');
+    if (saved) return JSON.parse(saved);
+    return [
+      {
+        id: 'cp1',
+        companyName: 'Grand Hotel Oslo',
+        orgNumber: '982 112 334',
+        contactPerson: 'Karoline Berg',
+        contactEmail: 'booking@grand.no',
+        email: 'booking@grand.no',
+        contactPhone: '+47 23 21 20 00',
+        phone: '+47 23 21 20 00',
+        billingAddress: 'Karl Johans gate 31, 0159 Oslo',
+        billingCycle: 'monthly',
+        creditLimit: 150000,
+        currentBalance: 42500,
+        discountPercent: 12,
+        status: 'active',
+        createdAt: '2026-01-10T10:00:00Z'
+      },
+      {
+        id: 'cp2',
+        companyName: 'Radisson Blu Plaza Oslo',
+        orgNumber: '971 445 667',
+        contactPerson: 'Morten Dahl',
+        contactEmail: 'dispatch@radissonplaza.no',
+        email: 'dispatch@radissonplaza.no',
+        contactPhone: '+47 22 05 80 00',
+        phone: '+47 22 05 80 00',
+        billingAddress: 'Sonja Henies plass 3, 0185 Oslo',
+        billingCycle: 'monthly',
+        creditLimit: 200000,
+        currentBalance: 78900,
+        discountPercent: 15,
+        status: 'active',
+        createdAt: '2026-01-15T12:00:00Z'
+      },
+      {
+        id: 'cp3',
+        companyName: 'DNB Hovedkontor Bjørvika',
+        orgNumber: '984 851 006',
+        contactPerson: 'Elin Haugen',
+        contactEmail: 'reise@dnb.no',
+        email: 'reise@dnb.no',
+        contactPhone: '+47 915 04 800',
+        phone: '+47 915 04 800',
+        billingAddress: 'Dronning Eufemias gate 30, 0191 Oslo',
+        billingCycle: 'monthly',
+        creditLimit: 300000,
+        currentBalance: 124000,
+        discountPercent: 18,
+        status: 'active',
+        createdAt: '2026-02-01T09:00:00Z'
+      }
+    ];
+  });
+
+  // 4. COUPONS STATE
+  const [coupons, setCoupons] = useState<Coupon[]>(() => {
+    const saved = localStorage.getItem('aron_admin_coupons');
+    if (saved) return JSON.parse(saved);
+    return [
+      {
+        id: 'c1',
+        code: 'VELKOMMEN2026',
+        discountType: 'percentage',
+        discountValue: 15,
+        maxUses: 500,
+        usedCount: 48,
+        expiryDate: '2026-12-31',
+        isActive: true,
+        minTripAmount: 150,
+        description: 'Velkomstrabatt for nye passasjerer i Oslo'
+      },
+      {
+        id: 'c2',
+        code: 'FLYPLASS100',
+        discountType: 'fixed',
+        discountValue: 100,
+        maxUses: 200,
+        usedCount: 84,
+        expiryDate: '2026-11-30',
+        isActive: true,
+        minTripAmount: 600,
+        description: 'Fast avslag på flyplasstransport med Aron Taxi'
+      },
+      {
+        id: 'c3',
+        code: 'ARONVIP',
+        discountType: 'percentage',
+        discountValue: 20,
+        maxUses: 100,
+        usedCount: 19,
+        expiryDate: '2026-12-31',
+        isActive: true,
+        minTripAmount: 300,
+        description: 'Eksklusiv rabatt for faste bedriftskunder'
+      }
+    ];
+  });
+
+  // 5. NOTIFICATIONS STATE
+  const [notifications, setNotifications] = useState<BroadcastNotification[]>(() => {
+    const saved = localStorage.getItem('aron_admin_notifications');
+    if (saved) return JSON.parse(saved);
+    return [
+      {
+        id: 'n1',
+        title: 'Høy etterspørsel i helgen',
+        message: 'Vi opplever stor pågang i Oslo sentrum og Majorstuen. Surge-tillegg er aktivert.',
+        target: 'drivers',
+        channel: 'push',
+        sentAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+        deliveredCount: 18
+      },
+      {
+        id: 'n2',
+        title: 'Aron Taxi Flåteoppdatering',
+        message: 'Nye Tesla Model Y Juniper og Mercedes EQE biler er nå tilgjengelige i appen.',
+        target: 'all',
+        channel: 'system',
+        sentAt: new Date(Date.now() - 86400000).toISOString(),
+        deliveredCount: 142
+      }
+    ];
+  });
+
+  // HANDLERS FOR NEW TABS
+  const handleCreateInvoice = (inv: Omit<Invoice, 'id'>) => {
+    const newId = `FAKT-2026-${1000 + invoices.length + 1}`;
+    const newInv: Invoice = {
+      ...inv,
+      id: newId
+    };
+    const updated = [newInv, ...invoices];
+    setInvoices(updated);
+    localStorage.setItem('aron_admin_invoices', JSON.stringify(updated));
+    showToast(`Faktura ${newId} for ${newInv.customerName} opprettet.`, 'success');
+  };
+
+  const handleUpdateInvoiceStatus = (id: string, status: Invoice['status']) => {
+    const updated = invoices.map(i => i.id === id ? { ...i, status } : i);
+    setInvoices(updated);
+    localStorage.setItem('aron_admin_invoices', JSON.stringify(updated));
+    showToast(`Fakturastatus endret til ${status}.`, 'info');
+  };
+
+  const handleToggleSurge = (zoneId: string) => {
+    const updated = surgeZones.map(z => z.id === zoneId ? { ...z, isActive: !z.isActive } : z);
+    setSurgeZones(updated);
+    localStorage.setItem('aron_admin_surge', JSON.stringify(updated));
+    const target = updated.find(z => z.id === zoneId);
+    showToast(`Surge-sone "${target?.name}" er nå ${target?.isActive ? 'AKTIVERT' : 'DEAKTIVERT'}.`, 'success');
+  };
+
+  const handleUpdateMultiplier = (zoneId: string, multiplier: number) => {
+    const updated = surgeZones.map(z => z.id === zoneId ? { ...z, multiplier } : z);
+    setSurgeZones(updated);
+    localStorage.setItem('aron_admin_surge', JSON.stringify(updated));
+    showToast(`Surgemultiplikator satt til ${multiplier}x`, 'info');
+  };
+
+  const handleCreatePartner = (p: Omit<CorporatePartner, 'id' | 'currentBalance' | 'createdAt'>) => {
+    const newId = `cp_${Date.now()}`;
+    const newP: CorporatePartner = {
+      ...p,
+      id: newId,
+      email: p.contactEmail || p.email || '',
+      phone: p.contactPhone || p.phone || '',
+      contactEmail: p.contactEmail || p.email || '',
+      contactPhone: p.contactPhone || p.phone || '',
+      billingCycle: p.billingCycle || 'monthly',
+      currentBalance: 0,
+      createdAt: new Date().toISOString()
+    };
+    const updated = [newP, ...partners];
+    setPartners(updated);
+    localStorage.setItem('aron_admin_partners', JSON.stringify(updated));
+    showToast(`Bedriftsavtale for ${newP.companyName} er lagret.`, 'success');
+  };
+
+  const handleCreateCoupon = (c: Omit<Coupon, 'id' | 'usedCount'>) => {
+    const newId = `c_${Date.now()}`;
+    const newC: Coupon = {
+      ...c,
+      id: newId,
+      usedCount: 0
+    };
+    const updated = [newC, ...coupons];
+    setCoupons(updated);
+    localStorage.setItem('aron_admin_coupons', JSON.stringify(updated));
+    showToast(`Rabattkode ${newC.code} er opprettet!`, 'success');
+  };
+
+  const handleToggleCoupon = (couponId: string) => {
+    const updated = coupons.map(c => c.id === couponId ? { ...c, isActive: !c.isActive } : c);
+    setCoupons(updated);
+    localStorage.setItem('aron_admin_coupons', JSON.stringify(updated));
+    showToast('Rabattkode status oppdatert.', 'info');
+  };
+
+  const handleDeleteCoupon = (couponId: string) => {
+    const updated = coupons.filter(c => c.id !== couponId);
+    setCoupons(updated);
+    localStorage.setItem('aron_admin_coupons', JSON.stringify(updated));
+    showToast('Rabattkode slettet.', 'info');
+  };
+
+  const handleSendNotification = (n: Omit<BroadcastNotification, 'id' | 'sentAt'>) => {
+    const newId = `notif_${Date.now()}`;
+    const newN: BroadcastNotification = {
+      ...n,
+      id: newId,
+      sentAt: new Date().toISOString()
+    };
+    const updated = [newN, ...notifications];
+    setNotifications(updated);
+    localStorage.setItem('aron_admin_notifications', JSON.stringify(updated));
+    showToast(`Varsel «${newN.title}» ble sendt ut!`, 'success');
+  };
 
   // Search and date filters
   const [tripSearch, setTripSearch] = useState('');
@@ -1030,7 +1352,7 @@ export const AdminDashboardPage: React.FC = () => {
         <div className="bg-[#111827] border border-white/10 p-1.5 rounded-2xl flex items-center gap-1.5 overflow-x-auto shadow-xl">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'overview'
                 ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -1049,7 +1371,7 @@ export const AdminDashboardPage: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('trips')}
-            className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'trips'
                 ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -1060,8 +1382,20 @@ export const AdminDashboardPage: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('invoices')}
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'invoices'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Fakturaer ({invoices.length})
+          </button>
+
+          <button
             onClick={() => setActiveTab('drivers')}
-            className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'drivers'
                 ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -1073,19 +1407,19 @@ export const AdminDashboardPage: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('customers')}
-            className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'customers'
                 ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            Kunder & Brukere ({customers.length})
+            Kunder ({customers.length})
           </button>
 
           <button
             onClick={() => setActiveTab('vehicles')}
-            className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'vehicles'
                 ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -1096,114 +1430,90 @@ export const AdminDashboardPage: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('surge')}
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'surge'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Flame className="w-3.5 h-3.5 text-amber-400" />
+            Surge & Hotspots
+          </button>
+
+          <button
+            onClick={() => setActiveTab('partners')}
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'partners'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            Bedriftsavtaler ({partners.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('coupons')}
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'coupons'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Tag className="w-3.5 h-3.5" />
+            Rabattkoder ({coupons.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('reports')}
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'reports'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            Regnskap & MVA
+          </button>
+
+          <button
+            onClick={() => setActiveTab('notifications')}
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'notifications'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Bell className="w-3.5 h-3.5" />
+            Varsler & SMS
+          </button>
+
+          <button
             onClick={() => setActiveTab('pricing')}
-            className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'pricing'
                 ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
                 : 'text-slate-400 hover:text-white hover:bg-white/5'
             }`}
           >
             <Settings className="w-3.5 h-3.5" />
-            Takster & Priser
+            Takster
           </button>
         </div>
 
         {/* OVERVIEW / LIVE DISPATCH TAB */}
         {activeTab === 'overview' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* MAP (7 COLS) */}
-              <div className="lg:col-span-7 bg-[#121722]/90 border border-white/10 rounded-3xl p-6 space-y-4 shadow-xl backdrop-blur-xl">
-                <div className="flex items-center justify-between">
-                  <h2 className="font-display text-lg font-bold text-[#F5F2ED] flex items-center gap-2">
-                    <Navigation className="w-5 h-5 text-[#D4AF37]" />
-                    Sanntidskart – Oslo og Omegn
-                  </h2>
-                  <span className="text-[10px] text-slate-400">
-                    {activeOnlineDrivers} aktive biler på kartet
-                  </span>
-                </div>
-
-                <LeafletMap
-                  driverLocation={drivers.find((d) => d.isOnline)?.currentLocation || { lat: 59.9139, lng: 10.7522 }}
-                  className="h-80 sm:h-96 w-full rounded-2xl overflow-hidden border border-white/10"
-                  zoom={12}
-                />
-
-                <div className="grid grid-cols-2 gap-3 text-[11px] text-slate-400">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-[#D4AF37]" />
-                    <span>Gull markør: Hentested / Bil 1</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-emerald-400" />
-                    <span>Grønn markør: Destinasjon / Bil 2</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* DISPATCH QUEUE (5 COLS) */}
-              <div className="lg:col-span-5 bg-[#121722]/90 border border-white/10 rounded-3xl p-6 space-y-4 shadow-xl backdrop-blur-xl flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                    <h3 className="font-display text-lg font-bold text-[#F5F2ED]">
-                      Turforespørsler ({trips.filter((t) => !['completed', 'cancelled'].includes(t.status)).length})
-                    </h3>
-                    <span className="text-[10px] font-bold text-[#D4AF37] uppercase">Sanntid</span>
-                  </div>
-
-                  <div className="space-y-3 mt-4 max-h-96 overflow-y-auto pr-1">
-                    {trips.filter((t) => !['completed', 'cancelled'].includes(t.status)).length === 0 ? (
-                      <div className="p-8 text-center text-slate-500 text-xs">
-                        Ingen ventende turer akkurat nå.
-                      </div>
-                    ) : (
-                      trips
-                        .filter((t) => !['completed', 'cancelled'].includes(t.status))
-                        .map((trip) => (
-                          <div key={trip.id} className="p-4 bg-[#0D121D] rounded-2xl border border-white/10 space-y-2.5">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <span className="font-mono text-xs font-bold text-[#D4AF37]">{trip.id}</span>
-                                <p className="text-xs font-semibold text-slate-200">{trip.customerName}</p>
-                              </div>
-                              <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-bold rounded-full uppercase">
-                                {trip.status}
-                              </span>
-                            </div>
-
-                            <div className="text-[11px] text-slate-400 space-y-1">
-                              <p className="truncate"><b>Fra:</b> {trip.pickup.address}</p>
-                              <p className="truncate"><b>Til:</b> {trip.destination.address}</p>
-                            </div>
-
-                            <div className="pt-2 border-t border-white/10 flex justify-between items-center text-xs">
-                              <span className="font-bold text-[#F5F2ED] font-mono">{trip.estimatedPrice} NOK</span>
-                              
-                              <div className="flex items-center gap-1.5">
-                                {drivers.map((d) => (
-                                  <button
-                                    key={d.id}
-                                    onClick={() => assignDriverToTrip(trip.id, d.id)}
-                                    className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${
-                                      trip.driverId === d.id
-                                        ? 'bg-[#D4AF37] text-slate-950 font-black'
-                                        : 'bg-white/5 text-slate-300 hover:bg-white/10'
-                                    }`}
-                                  >
-                                    Send til {d.name.split(' ')[0]}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <AdminOverviewTab
+            trips={trips}
+            drivers={drivers}
+            vehicles={vehicles}
+            customers={customers}
+            assignDriverToTrip={assignDriverToTrip}
+            updateTripStatus={updateTripStatus}
+            dateRange={overviewDateRange}
+            setDateRange={setOverviewDateRange}
+          />
         )}
 
         {/* TRIPS TAB */}
@@ -1469,8 +1779,8 @@ export const AdminDashboardPage: React.FC = () => {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-300">
                         <div><b>Kunde:</b> {t.customerName} ({t.customerPhone})</div>
                         <div><b>Sjåfør:</b> {t.driverName || 'Ikke tildelt'} ({t.vehicleModel || '–'})</div>
-                        <div className="truncate"><b>Fra:</b> {t.pickup.address}</div>
-                        <div className="truncate"><b>Til:</b> {t.destination.address}</div>
+                        <div className="truncate"><b>Fra:</b> {t.pickup?.address || '–'}</div>
+                        <div className="truncate"><b>Til:</b> {t.destination?.address || '–'}</div>
                       </div>
 
                       <div className="pt-2 border-t border-white/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -2225,6 +2535,65 @@ export const AdminDashboardPage: React.FC = () => {
               ))}
             </div>
           </div>
+        )}
+
+        {/* INVOICES TAB */}
+        {activeTab === 'invoices' && (
+          <AdminInvoicesTab
+            trips={trips}
+            invoices={invoices}
+            onCreateInvoice={handleCreateInvoice}
+            onUpdateInvoiceStatus={handleUpdateInvoiceStatus}
+            showToast={showToast}
+          />
+        )}
+
+        {/* SURGE & HOTSPOTS TAB */}
+        {activeTab === 'surge' && (
+          <AdminSurgeTab
+            surgeZones={surgeZones}
+            onToggleSurge={handleToggleSurge}
+            onUpdateMultiplier={handleUpdateMultiplier}
+            showToast={showToast}
+          />
+        )}
+
+        {/* CORPORATE PARTNERS TAB */}
+        {activeTab === 'partners' && (
+          <AdminPartnersTab
+            partners={partners}
+            onCreatePartner={handleCreatePartner}
+            showToast={showToast}
+          />
+        )}
+
+        {/* COUPONS & PROMOS TAB */}
+        {activeTab === 'coupons' && (
+          <AdminCouponsTab
+            coupons={coupons}
+            onCreateCoupon={handleCreateCoupon}
+            onToggleCoupon={handleToggleCoupon}
+            onDeleteCoupon={handleDeleteCoupon}
+            showToast={showToast}
+          />
+        )}
+
+        {/* REPORTS & ACCOUNTING TAB */}
+        {activeTab === 'reports' && (
+          <AdminReportsTab
+            trips={trips}
+            drivers={drivers}
+            showToast={showToast}
+          />
+        )}
+
+        {/* NOTIFICATIONS & BROADCASTS TAB */}
+        {activeTab === 'notifications' && (
+          <AdminNotificationsTab
+            notifications={notifications}
+            onSendNotification={handleSendNotification}
+            showToast={showToast}
+          />
         )}
 
         {/* PRICING CONFIGURATION TAB */}
@@ -3131,11 +3500,11 @@ export const AdminDashboardPage: React.FC = () => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Fra:</span>
-                  <span className="text-right truncate max-w-[200px]">{selectedInvoiceTrip.pickup.address}</span>
+                  <span className="text-right truncate max-w-[200px]">{selectedInvoiceTrip.pickup?.address || '–'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Til:</span>
-                  <span className="text-right truncate max-w-[200px]">{selectedInvoiceTrip.destination.address}</span>
+                  <span className="text-right truncate max-w-[200px]">{selectedInvoiceTrip.destination?.address || '–'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Distanse / Varighet:</span>

@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { Trip, LocationPoint } from '../types';
 import { db } from '../services/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { validateAndCalculateDiscount, getStoredCoupons } from '../services/couponService';
 import {
   MapPin,
   Navigation,
@@ -31,8 +32,73 @@ import {
   AlertTriangle,
   AlertCircle,
   Info,
-  Check
+  Check,
+  Sparkles,
+  Tag,
+  Percent,
+  VolumeX,
+  Thermometer,
+  Plane,
+  Baby,
+  Dog,
+  ChevronDown,
+  ChevronUp,
+  Gift,
+  Shield,
+  Crown
 } from 'lucide-react';
+
+export type VehicleTier = 'vip_black' | 'comfort_eco' | 'airport_vip';
+
+interface TierOption {
+  id: VehicleTier;
+  name: string;
+  subtitle: string;
+  description: string;
+  multiplier: number;
+  seats: number;
+  luggageCap: number;
+  badge: string;
+  popular?: boolean;
+  carModel: string;
+}
+
+const VEHICLE_TIERS: TierOption[] = [
+  {
+    id: 'vip_black',
+    name: 'Aron Black VIP Executive',
+    subtitle: 'Luksusklasse & Privatsjåfør',
+    description: 'Svart Tesla / Mercedes EQS, sotede ruter, dresskledd privatsjåfør, gratis mineralvann og mobilladere.',
+    multiplier: 1.25,
+    seats: 4,
+    luggageCap: 3,
+    badge: 'Mest Populær VIP',
+    popular: true,
+    carModel: 'Tesla Model Y / Mercedes EQS'
+  },
+  {
+    id: 'comfort_eco',
+    name: 'Aron Comfort Electric',
+    subtitle: 'Miljøvennlig & Stillegående',
+    description: '100% utslippsfri elbil med god plass, høy komfort og rask respons i hele Oslo.',
+    multiplier: 1.0,
+    seats: 4,
+    luggageCap: 2,
+    badge: 'Standard Miljøtakst',
+    carModel: 'Tesla Model Y / Polestar 2'
+  },
+  {
+    id: 'airport_vip',
+    name: 'Aron Airport VIP Express',
+    subtitle: 'Gardermoen Meet & Greet',
+    description: 'Dedikert flyplasstransport med flysporing, personlig velkomst i ankomsthallen og bagasjehjelp.',
+    multiplier: 1.30,
+    seats: 4,
+    luggageCap: 4,
+    badge: 'Flyplass VIP',
+    carModel: 'Executive Sedan / SUV'
+  }
+];
 
 export const OrderPage: React.FC = () => {
   const location = useLocation();
@@ -72,6 +138,27 @@ export const OrderPage: React.FC = () => {
   const [scheduledTime, setScheduledTime] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<'vipps' | 'card' | 'apple_pay' | 'cash' | 'invoice'>('card');
+
+  // Luxury Vehicle Class Tier
+  const [selectedTier, setSelectedTier] = useState<VehicleTier>('vip_black');
+
+  // Luxury Ride Preferences
+  const [showPreferences, setShowPreferences] = useState<boolean>(false);
+  const [quietRide, setQuietRide] = useState<boolean>(false);
+  const [temperature, setTemperature] = useState<'normal' | 'cool' | 'warm'>('normal');
+  const [luggageHelp, setLuggageHelp] = useState<boolean>(true);
+  const [childSeat, setChildSeat] = useState<boolean>(false);
+  const [petFriendly, setPetFriendly] = useState<boolean>(false);
+  const [flightNumber, setFlightNumber] = useState<string>('');
+
+  // Discount & Coupon Code State
+  const [couponCodeInput, setCouponCodeInput] = useState<string>(stateLocation.couponCode || '');
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountAmount: number;
+    discountDescription: string;
+  } | null>(null);
+  const [couponError, setCouponError] = useState<string>('');
 
   // Route & Calculations State
   const [calculating, setCalculating] = useState<boolean>(false);
@@ -136,7 +223,17 @@ export const OrderPage: React.FC = () => {
       if (!active) return;
       
       setRouteData(res);
-      const isAirport = toQuery.toLowerCase().includes('gardermoen') || fromQuery.toLowerCase().includes('gardermoen');
+      const isAirport =
+        toQuery.toLowerCase().includes('gardermoen') ||
+        fromQuery.toLowerCase().includes('gardermoen') ||
+        toQuery.toLowerCase().includes('torp') ||
+        fromQuery.toLowerCase().includes('torp') ||
+        toQuery.toLowerCase().includes('flyplass') ||
+        fromQuery.toLowerCase().includes('flyplass') ||
+        toPoint.address.toLowerCase().includes('gardermoen') ||
+        fromPoint.address.toLowerCase().includes('gardermoen') ||
+        selectedTier === 'airport_vip';
+
       const pricingCalc = calculateTripPrice(res.distanceKm, res.durationMinutes, isAirport, pricing);
       setPriceDetails(pricingCalc);
       setCalculating(false);
@@ -144,7 +241,62 @@ export const OrderPage: React.FC = () => {
 
     computeRoute();
     return () => { active = false; };
-  }, [fromPoint, toPoint, pricing]);
+  }, [fromPoint, toPoint, pricing, toQuery, fromQuery, selectedTier]);
+
+  // Auto apply coupon if provided via navigation state
+  useEffect(() => {
+    if (stateLocation.couponCode && priceDetails?.totalPrice) {
+      const activeTierObj = VEHICLE_TIERS.find(t => t.id === selectedTier) || VEHICLE_TIERS[0];
+      const tierGrossPrice = Math.round(priceDetails.totalPrice * activeTierObj.multiplier);
+      const res = validateAndCalculateDiscount(stateLocation.couponCode, tierGrossPrice);
+      if (res.valid) {
+        setAppliedCoupon({
+          code: stateLocation.couponCode.toUpperCase(),
+          discountAmount: res.discountAmount,
+          discountDescription: res.discountDescription
+        });
+        toast.success(`Rabattkode ${stateLocation.couponCode.toUpperCase()} aktivert!`);
+      }
+    }
+  }, [stateLocation.couponCode, priceDetails?.totalPrice, selectedTier]);
+
+  const handleApplyCoupon = (codeToApply?: string) => {
+    setCouponError('');
+    const targetCode = (codeToApply || couponCodeInput).trim().toUpperCase();
+    if (!targetCode) {
+      setCouponError('Vennligst skriv inn en rabattkode.');
+      return;
+    }
+
+    if (!priceDetails?.totalPrice) {
+      setCouponError('Beregner rute... Vennligst prøv igjen om et øyeblikk.');
+      return;
+    }
+
+    const activeTierObj = VEHICLE_TIERS.find(t => t.id === selectedTier) || VEHICLE_TIERS[0];
+    const tierGrossPrice = Math.round(priceDetails.totalPrice * activeTierObj.multiplier);
+
+    const res = validateAndCalculateDiscount(targetCode, tierGrossPrice);
+    if (res.valid) {
+      setAppliedCoupon({
+        code: targetCode,
+        discountAmount: res.discountAmount,
+        discountDescription: res.discountDescription
+      });
+      setCouponCodeInput(targetCode);
+      toast.success(`Rabattkode «${targetCode}» er aktivert! ${res.discountDescription}`);
+    } else {
+      setCouponError(res.errorMessage || 'Ugyldig rabattkode.');
+      toast.error(res.errorMessage || 'Ugyldig rabattkode.');
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCodeInput('');
+    setCouponError('');
+    toast.info('Rabattkode fjernet.');
+  };
 
   const handleFromSelect = (item: GeocodeResult) => {
     setFromQuery(item.address);
@@ -177,6 +329,12 @@ export const OrderPage: React.FC = () => {
       setToSuggestions([]);
     }
   };
+
+  // Pricing calculations with Tier and Coupon
+  const currentTierObj = VEHICLE_TIERS.find(t => t.id === selectedTier) || VEHICLE_TIERS[0];
+  const baseGrossPrice = priceDetails ? Math.round(priceDetails.totalPrice * currentTierObj.multiplier) : 0;
+  const discountAmount = appliedCoupon ? Math.min(baseGrossPrice, appliedCoupon.discountAmount) : 0;
+  const finalPayablePrice = Math.max(0, baseGrossPrice - discountAmount);
 
   const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -211,8 +369,20 @@ export const OrderPage: React.FC = () => {
       notes: notes || '',
       distanceKm: routeData.distanceKm,
       durationMinutes: routeData.durationMinutes,
-      routeGeometry: routeData.geometry || '',
-      estimatedPrice: priceDetails.totalPrice,
+      routeGeometry: routeData.geometry || undefined,
+      estimatedPrice: finalPayablePrice,
+      originalPrice: baseGrossPrice,
+      discountAmount: discountAmount > 0 ? discountAmount : undefined,
+      couponCode: appliedCoupon?.code || undefined,
+      vehicleCategory: selectedTier,
+      ridePreferences: {
+        quietRide,
+        temperature,
+        luggageHelp,
+        childSeat,
+        petFriendly
+      },
+      flightNumber: flightNumber || undefined,
       ratePerKm: priceDetails.ratePerKm,
       startFee: priceDetails.startFee,
       airportFee: priceDetails.airportFee,
@@ -235,32 +405,33 @@ export const OrderPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0A0D14] text-[#F5F2ED] flex flex-col relative selection:bg-[#D4AF37] selection:text-black">
+    <div className="min-h-screen bg-[#070A10] text-[#F5F2ED] flex flex-col relative selection:bg-[#D4AF37] selection:text-black">
       <Header />
 
       <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8 max-w-7xl w-full mx-auto">
         
         {/* IF BOOKING CONFIRMED - LIVE TRACKING */}
         {activeBookedTrip ? (
-          <div className="max-w-3xl mx-auto bg-[#121722]/95 border border-white/10 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 backdrop-blur-xl">
+          <div className="max-w-3xl mx-auto bg-[#0F1420]/95 border border-[#D4AF37]/30 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 backdrop-blur-xl">
             
             {/* TOP HEADER */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-white/10">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-[#D4AF37]/15 border border-[#D4AF37]/40 rounded-full flex items-center justify-center text-[#D4AF37]">
-                  <CheckCircle2 className="w-6 h-6" />
+                <div className="w-12 h-12 bg-[#D4AF37]/20 border border-[#D4AF37]/50 rounded-2xl flex items-center justify-center text-[#D4AF37]">
+                  <Crown className="w-6 h-6" />
                 </div>
                 <div>
-                  <span className="text-[10px] font-bold tracking-widest text-[#D4AF37] uppercase block">
-                    LIVE TAXISPORING
+                  <span className="text-[10px] font-bold tracking-widest text-[#D4AF37] uppercase flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3" />
+                    ARON BLACK VIP · LIVE SPORING
                   </span>
-                  <h1 className="font-display text-2xl font-bold text-[#F5F2ED]">
-                    {activeBookedTrip.status === 'searching_driver' && 'Søker ledig sjåfør...'}
+                  <h1 className="font-display text-2xl font-bold text-white">
+                    {activeBookedTrip.status === 'searching_driver' && 'Søker nærmeste VIP-sjåfør...'}
                     {activeBookedTrip.status === 'pending' && 'Søker ledig sjåfør...'}
                     {activeBookedTrip.status === 'requested' && 'Søker ledig sjåfør...'}
-                    {activeBookedTrip.status === 'driver_assigned' && 'Sjåfør er på vei!'}
-                    {activeBookedTrip.status === 'driver_arrived' && 'Sjåføren har ankommet!'}
-                    {activeBookedTrip.status === 'trip_started' && 'Tur pågår...'}
+                    {activeBookedTrip.status === 'driver_assigned' && 'Privatsjåfør er på vei!'}
+                    {activeBookedTrip.status === 'driver_arrived' && 'Sjåføren venter utenfor!'}
+                    {activeBookedTrip.status === 'trip_started' && 'Eksklusiv tur pågår...'}
                     {activeBookedTrip.status === 'completed' && 'Turen er fullført!'}
                   </h1>
                 </div>
@@ -268,7 +439,10 @@ export const OrderPage: React.FC = () => {
 
               <div className="text-right">
                 <span className="text-xs text-slate-400 block font-mono">Tur-ID: {activeBookedTrip.id}</span>
-                <span className="text-sm font-extrabold text-[#D4AF37]">{activeBookedTrip.estimatedPrice} NOK</span>
+                <span className="text-base font-black text-[#D4AF37] font-mono">{activeBookedTrip.estimatedPrice} NOK</span>
+                {activeBookedTrip.couponCode && (
+                  <span className="text-[10px] text-emerald-400 font-bold block">Rabatt {activeBookedTrip.couponCode} brukt</span>
+                )}
               </div>
             </div>
 
@@ -279,26 +453,31 @@ export const OrderPage: React.FC = () => {
                 destination={activeBookedTrip.destination}
                 driverLocation={activeBookedTrip.driverLocation}
                 routeGeometry={activeBookedTrip.routeGeometry}
-                centerLat={activeBookedTrip.driverLocation?.lat || activeBookedTrip.pickup.lat}
-                centerLng={activeBookedTrip.driverLocation?.lng || activeBookedTrip.pickup.lng}
+                centerLat={activeBookedTrip.driverLocation?.lat || activeBookedTrip.pickup?.lat || 59.9139}
+                centerLng={activeBookedTrip.driverLocation?.lng || activeBookedTrip.pickup?.lng || 10.7522}
                 zoom={14}
               />
             </div>
 
             {/* ASSIGNED DRIVER & VEHICLE CARD */}
             {activeBookedTrip.driverName && (
-              <div className="bg-[#0D121D] p-5 rounded-2xl border border-[#D4AF37]/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="bg-[#090D16] p-5 rounded-2xl border border-[#D4AF37]/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
                 <div className="flex items-center gap-3.5">
-                  <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/10 flex items-center justify-center text-[#D4AF37]">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#D4AF37]/30 to-black border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37]">
                     <Car className="w-6 h-6" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-sm text-[#F5F2ED]">{activeBookedTrip.driverName}</h3>
-                    <p className="text-xs text-slate-300">{activeBookedTrip.vehicleModel || 'Tesla Model Y'}</p>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold text-sm text-white">{activeBookedTrip.driverName}</h3>
+                      <span className="px-2 py-0.5 bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#D4AF37] text-[10px] font-black rounded-full uppercase">
+                        Sertifisert Aron VIP
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300">{activeBookedTrip.vehicleModel || 'Tesla Model Y Juniper'}</p>
                     <div className="flex items-center gap-2 mt-0.5 text-[10px] text-[#D4AF37] font-mono">
-                      <span>Bilnr: {activeBookedTrip.vehicleLicensePlate || 'EP 17891'}</span>
+                      <span>Bilskilt: {activeBookedTrip.vehicleLicensePlate || 'EK 88201'}</span>
                       <span>·</span>
-                      <span>Løyve: {activeBookedTrip.permitNumber || 'OS 10597'}</span>
+                      <span>Drosjeløyve: {activeBookedTrip.permitNumber || 'OS 10597'}</span>
                     </div>
                   </div>
                 </div>
@@ -306,7 +485,7 @@ export const OrderPage: React.FC = () => {
                 {activeBookedTrip.driverPhone && (
                   <a
                     href={`tel:${activeBookedTrip.driverPhone}`}
-                    className="px-5 py-2.5 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] text-slate-950 font-extrabold text-xs uppercase tracking-wider rounded-full shadow-lg flex items-center gap-2"
+                    className="px-5 py-2.5 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg flex items-center gap-2 hover:brightness-110 transition-all"
                   >
                     <Phone className="w-4 h-4" />
                     Ring Sjåfør
@@ -317,16 +496,16 @@ export const OrderPage: React.FC = () => {
 
             {/* POST-TRIP RATING & TIPPING SECTION (WHEN COMPLETED) */}
             {activeBookedTrip.status === 'completed' && !ratingSubmitted && (
-              <div className="bg-[#0D121D] p-6 rounded-3xl border border-[#D4AF37] space-y-5 animate-slide-up text-center">
+              <div className="bg-[#090D16] p-6 rounded-3xl border border-[#D4AF37] space-y-5 animate-slide-up text-center shadow-2xl">
                 <div className="space-y-1">
                   <div className="w-10 h-10 rounded-full bg-[#D4AF37]/20 flex items-center justify-center mx-auto text-[#D4AF37]">
                     <HeartHandshake className="w-5 h-5" />
                   </div>
-                  <h3 className="font-display text-lg font-bold text-[#F5F2ED]">
-                    Hvordan var turen din?
+                  <h3 className="font-display text-lg font-bold text-white">
+                    Hvordan var VIP-opplevelsen din?
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Gi sjåføren en vurdering og eventuelle drikkepenger
+                    Gi sjåføren din stjernevurdering og eventuelle drikkepenger (100% utbetales til sjåfør).
                   </p>
                 </div>
 
@@ -337,13 +516,13 @@ export const OrderPage: React.FC = () => {
                       key={star}
                       type="button"
                       onClick={() => setSelectedRating(star)}
-                      className="p-1.5 transition-transform hover:scale-125"
+                      className="p-1.5 transition-transform hover:scale-125 cursor-pointer"
                     >
                       <Star
                         className={`w-7 h-7 ${
                           star <= selectedRating
                             ? 'text-[#D4AF37] fill-[#D4AF37]'
-                            : 'text-slate-600'
+                            : 'text-slate-700'
                         }`}
                       />
                     </button>
@@ -353,10 +532,10 @@ export const OrderPage: React.FC = () => {
                 {/* TIP PILLS */}
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                    Gi Drikkepenger (100% til sjåføren)
+                    Gi Drikkepenger
                   </label>
                   <div className="flex flex-wrap justify-center gap-2">
-                    {[0, 20, 50, 100].map((amount) => (
+                    {[0, 20, 50, 100, 200].map((amount) => (
                       <button
                         key={amount}
                         type="button"
@@ -364,9 +543,9 @@ export const OrderPage: React.FC = () => {
                           setSelectedTip(amount);
                           setCustomTip('');
                         }}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                           selectedTip === amount && !customTip
-                            ? 'bg-[#D4AF37] text-slate-950 shadow-md'
+                            ? 'bg-[#D4AF37] text-slate-950 font-black shadow-md'
                             : 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
                         }`}
                       >
@@ -378,7 +557,7 @@ export const OrderPage: React.FC = () => {
 
                 <button
                   onClick={handleSendRatingAndTip}
-                  className="w-full py-3.5 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] text-slate-950 font-extrabold uppercase text-xs rounded-full shadow-lg"
+                  className="w-full py-3.5 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] text-slate-950 font-black uppercase text-xs rounded-xl shadow-lg cursor-pointer hover:brightness-110"
                 >
                   Send Vurdering & Fullfør
                 </button>
@@ -395,148 +574,70 @@ export const OrderPage: React.FC = () => {
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
               <button
                 onClick={() => navigate('/konto')}
-                className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-slate-200 font-bold uppercase text-xs rounded-full border border-white/10 transition-all"
+                className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-slate-200 font-bold uppercase text-xs rounded-xl border border-white/10 transition-all cursor-pointer"
               >
-                Gå til Mine Turer
+                Gå til Mine Turer & Kvittering
               </button>
               <button
                 onClick={() => setBookedTrip(null)}
-                className="flex-1 py-3 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] text-slate-950 font-extrabold uppercase text-xs rounded-full shadow-lg"
+                className="flex-1 py-3 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] text-slate-950 font-black uppercase text-xs rounded-xl shadow-lg cursor-pointer hover:brightness-110"
               >
-                Bestill Ny Tur
+                Bestill Ny VIP Tur
               </button>
             </div>
 
           </div>
         ) : (
-          /* MAIN FORM LAYOUT */
+          /* MAIN CLASSIC LUXURY BOOKING LAYOUT */
           <div className="space-y-8">
-            <div>
-              <span className="text-xs font-bold tracking-widest text-[#D4AF37] uppercase">
-                ARON TAXI NORWAY
-              </span>
-              <h1 className="font-display text-3xl sm:text-4xl font-bold text-[#F5F2ED]">
-                Bestill din taxi
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-400 mt-1 font-light">
-                Ingen innlogging er påkrevd. Fyll inn henteadresse og destinasjon for å se fastpris og avstand.
-              </p>
+            
+            {/* CLASSIC HERO TITLE */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-white/10 pb-6">
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="px-2.5 py-0.5 bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#D4AF37] text-[10px] font-black uppercase tracking-widest rounded-full flex items-center gap-1">
+                    <Crown className="w-3 h-3" />
+                    ARON TAXI NORWAY
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-medium">Oslo · Gardermoen · Viken</span>
+                </div>
+                <h1 className="font-display text-3xl sm:text-4xl font-black text-white tracking-tight">
+                  Bestill Drosje & Privatsjåfør
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-400 mt-1 font-light max-w-xl">
+                  Garantert fastpris, profesjonelle privatsjåfører, 100% utslippsfri elbilflåte og førsteklasses service.
+                </p>
+              </div>
+
+              {/* LIVE DRIVER STATUS */}
+              <div className="bg-[#0E131F] border border-white/10 px-4 py-2.5 rounded-2xl flex items-center gap-3 shadow-lg">
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping relative">
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 absolute inset-0" />
+                </div>
+                <div className="text-left text-xs">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Sjåførstatus i Oslo</span>
+                  <span className="font-bold text-white">
+                    {isDriverAvailable ? 'Ledige biler i nærområdet' : 'Forhåndsbestilling aktiv'}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
               
               {/* LEFT FORM (7 COLS) */}
-              <form onSubmit={handleBookingSubmit} className="lg:col-span-7 bg-[#121722]/90 border border-white/10 rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl backdrop-blur-xl">
+              <form onSubmit={handleBookingSubmit} className="lg:col-span-7 bg-[#0E131F]/90 border border-white/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl backdrop-blur-xl">
                 
-                {/* DRIVER AVAILABILITY LIVE STATUS CARD */}
-                {isDriverAvailable ? (
-                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex items-center justify-between gap-3 text-xs">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                        <Car className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                          <span className="font-bold text-emerald-300">
-                            {availableDrivers.length} sjåfør{availableDrivers.length > 1 ? 'er' : ''} ledig i Oslo nå
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-300">Klar for direkte henting og rask ankomst.</p>
-                      </div>
-                    </div>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400 bg-emerald-500/20 px-2.5 py-1 rounded-full border border-emerald-500/40 hidden sm:inline-block">
-                      Aktiv Sentral
-                    </span>
-                  </div>
-                ) : (
-                  <div className="bg-rose-500/10 border-2 border-rose-500/40 rounded-2xl p-4 sm:p-5 flex items-start gap-3.5 text-xs text-rose-200">
-                    <div className="w-9 h-9 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <AlertCircle className="w-5 h-5" />
-                    </div>
-                    <div className="space-y-1.5 flex-1">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-bold text-rose-100 text-sm flex items-center gap-2">
-                          Ingen ledige sjåfører akkurat nå
-                        </h4>
-                        <span className="text-[10px] uppercase font-bold bg-rose-500/25 text-rose-300 px-2 py-0.5 rounded-full border border-rose-500/40">
-                          Direkte tur utilgjengelig
-                        </span>
-                      </div>
-                      <p className="text-slate-300 leading-relaxed text-[11px]">
-                        Alle våre sjåfører er for øyeblikket opptatt med andre oppdrag eller utenfor vakt. Du kan bare bestille direkte når en sjåfør er pålogget og ledig.
-                      </p>
-                      <div className="pt-1 flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setIsPreorder(true)}
-                          className="px-3 py-1.5 bg-[#D4AF37] hover:bg-[#E5C158] text-slate-950 font-bold text-[11px] uppercase tracking-wider rounded-lg transition-all shadow-md cursor-pointer flex items-center gap-1.5"
-                        >
-                          <Calendar className="w-3.5 h-3.5" />
-                          Bytt til Forhåndsbestilling
-                        </button>
-                        <span className="text-[10px] text-slate-400">
-                          (Reserver bil for senere tidspunkt)
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* CONTACT INFO (GUEST OR LOGGED IN) */}
+                {/* 1. LOCATIONS (PICKUP & DESTINATION) */}
                 <div className="space-y-4">
-                  <h3 className="text-xs font-bold tracking-wider text-[#D4AF37] uppercase flex items-center gap-2">
-                    <User className="w-4 h-4" />
-                    Kontaktinformasjon
-                  </h3>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Navn</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="Ola Nordmann"
-                        value={customerName}
-                        onChange={(e) => setCustomerName(e.target.value)}
-                        className="w-full px-3.5 py-2.5 bg-[#0D121D] border border-white/10 rounded-xl text-xs text-[#F5F2ED] focus:outline-none focus:border-[#D4AF37]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Telefon</label>
-                      <input
-                        type="tel"
-                        required
-                        placeholder="+47 900 00 000"
-                        value={customerPhone}
-                        onChange={(e) => setCustomerPhone(e.target.value)}
-                        className="w-full px-3.5 py-2.5 bg-[#0D121D] border border-white/10 rounded-xl text-xs text-[#F5F2ED] focus:outline-none focus:border-[#D4AF37]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">E-post</label>
-                      <input
-                        type="email"
-                        required
-                        placeholder="ola@epost.no"
-                        value={customerEmail}
-                        onChange={(e) => setCustomerEmail(e.target.value)}
-                        className="w-full px-3.5 py-2.5 bg-[#0D121D] border border-white/10 rounded-xl text-xs text-[#F5F2ED] focus:outline-none focus:border-[#D4AF37]"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* LOCATIONS */}
-                <div className="space-y-4 pt-4 border-t border-white/10">
-                  <h3 className="text-xs font-bold tracking-wider text-[#D4AF37] uppercase flex items-center gap-2">
+                  <h3 className="text-xs font-black tracking-wider text-[#D4AF37] uppercase flex items-center gap-2">
                     <MapPin className="w-4 h-4" />
-                    Hente- og Leveringssted
+                    1. Hente- og Leveringsadresse
                   </h3>
 
                   {/* FROM */}
                   <div className="relative">
-                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">FRA (HENTESTED)</label>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Fra (Hentested) *</label>
                     <div className="relative flex items-center">
                       <MapPin className="w-4 h-4 text-[#D4AF37] absolute left-3 pointer-events-none" />
                       <input
@@ -544,7 +645,8 @@ export const OrderPage: React.FC = () => {
                         required
                         value={fromQuery}
                         onChange={(e) => handleFromSearch(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2.5 bg-[#0D121D] border border-white/10 rounded-xl text-xs text-[#F5F2ED] focus:outline-none focus:border-[#D4AF37]"
+                        placeholder="Hvor skal du hentes?"
+                        className="w-full pl-9 pr-4 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
                       />
                     </div>
                     {fromSuggestions.length > 0 && (
@@ -554,7 +656,7 @@ export const OrderPage: React.FC = () => {
                             key={idx}
                             type="button"
                             onClick={() => handleFromSelect(item)}
-                            className="w-full text-left px-4 py-2 text-xs text-slate-200 hover:bg-white/10 border-b border-white/5 last:border-0 truncate"
+                            className="w-full text-left px-4 py-2 text-xs text-slate-200 hover:bg-white/10 border-b border-white/5 last:border-0 truncate cursor-pointer"
                           >
                             {item.address}
                           </button>
@@ -565,7 +667,7 @@ export const OrderPage: React.FC = () => {
 
                   {/* TO */}
                   <div className="relative">
-                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">TIL (DESTINASJON)</label>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Til (Destinasjon) *</label>
                     <div className="relative flex items-center">
                       <Navigation className="w-4 h-4 text-emerald-400 absolute left-3 pointer-events-none rotate-45" />
                       <input
@@ -573,7 +675,8 @@ export const OrderPage: React.FC = () => {
                         required
                         value={toQuery}
                         onChange={(e) => handleToSearch(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2.5 bg-[#0D121D] border border-white/10 rounded-xl text-xs text-[#F5F2ED] focus:outline-none focus:border-[#D4AF37]"
+                        placeholder="Hvor skal du reise?"
+                        className="w-full pl-9 pr-4 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
                       />
                     </div>
                     {toSuggestions.length > 0 && (
@@ -583,7 +686,7 @@ export const OrderPage: React.FC = () => {
                             key={idx}
                             type="button"
                             onClick={() => handleToSelect(item)}
-                            className="w-full text-left px-4 py-2 text-xs text-slate-200 hover:bg-white/10 border-b border-white/5 last:border-0 truncate"
+                            className="w-full text-left px-4 py-2 text-xs text-slate-200 hover:bg-white/10 border-b border-white/5 last:border-0 truncate cursor-pointer"
                           >
                             {item.address}
                           </button>
@@ -594,120 +697,335 @@ export const OrderPage: React.FC = () => {
 
                   {/* OPTIONAL STOPS */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Eventuelle stopp underveis (Valgfritt)</label>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Stopp underveis (Valgfritt)</label>
                     <input
                       type="text"
-                      placeholder="Eks. Stopp innom Majorstuen T-bane"
+                      placeholder="Eks. Stopp innom Hotel Continental eller Majorstuen"
                       value={viaStops}
                       onChange={(e) => setViaStops(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-[#0D121D] border border-white/10 rounded-xl text-xs text-[#F5F2ED] focus:outline-none focus:border-[#D4AF37]"
+                      className="w-full px-3.5 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
                     />
                   </div>
                 </div>
 
-                {/* TRIP OPTIONS */}
+                {/* 2. VEHICLE CLASS TIER SELECTOR */}
+                <div className="space-y-3 pt-4 border-t border-white/10">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-black uppercase tracking-wider text-[#D4AF37] flex items-center gap-2">
+                      <Car className="w-4 h-4" />
+                      2. Velg Kjøretøysklasse
+                    </label>
+                    <span className="text-[11px] text-slate-400">Garantert bilmodell</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {VEHICLE_TIERS.map((tier) => {
+                      const isSelected = selectedTier === tier.id;
+                      const tierPrice = priceDetails ? Math.round(priceDetails.totalPrice * tier.multiplier) : null;
+                      return (
+                        <div
+                          key={tier.id}
+                          onClick={() => setSelectedTier(tier.id)}
+                          className={`relative p-4 rounded-2xl border transition-all cursor-pointer text-left flex flex-col justify-between ${
+                            isSelected
+                              ? 'bg-gradient-to-b from-[#D4AF37]/15 to-[#0B0F19] border-[#D4AF37] shadow-xl shadow-[#D4AF37]/10'
+                              : 'bg-[#090D16] border-white/10 hover:border-white/25 hover:bg-white/[0.02]'
+                          }`}
+                        >
+                          {tier.popular && (
+                            <span className="absolute -top-2.5 right-3 px-2 py-0.5 bg-[#D4AF37] text-slate-950 text-[9px] font-black uppercase rounded-full shadow-md">
+                              {tier.badge}
+                            </span>
+                          )}
+
+                          <div>
+                            <h4 className="font-bold text-white text-sm mb-1">
+                              {tier.name}
+                            </h4>
+                            <p className="text-[11px] text-slate-400 font-light leading-relaxed mb-3">
+                              {tier.description}
+                            </p>
+                          </div>
+
+                          <div className="pt-2 border-t border-white/5 flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2.5 text-slate-400 text-[11px]">
+                              <span className="flex items-center gap-1">
+                                <Users className="w-3.5 h-3.5 text-slate-500" />
+                                {tier.seats}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Luggage className="w-3.5 h-3.5 text-slate-500" />
+                                {tier.luggageCap}
+                              </span>
+                            </div>
+
+                            <div className="text-right">
+                              {calculating ? (
+                                <span className="text-[11px] text-slate-500 font-mono">Beregner...</span>
+                              ) : tierPrice ? (
+                                <span className={`font-mono font-bold ${isSelected ? 'text-[#D4AF37] text-sm font-black' : 'text-white'}`}>
+                                  {tierPrice} NOK
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-500 font-mono">Fastpris</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. TIME & PASSENGERS */}
                 <div className="space-y-4 pt-4 border-t border-white/10">
-                  <h3 className="text-xs font-bold tracking-wider text-[#D4AF37] uppercase flex items-center gap-2">
-                    <Users className="w-4 h-4" />
-                    Detaljer & Tidspunkt
+                  <h3 className="text-xs font-black tracking-wider text-[#D4AF37] uppercase flex items-center gap-2">
+                    <Clock className="w-4 h-4" />
+                    3. Tidspunkt & Passasjerer
                   </h3>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Passasjerer</label>
                       <select
                         value={passengers}
                         onChange={(e) => setPassengers(Number(e.target.value))}
-                        className="w-full px-3 py-2.5 bg-[#0D121D] border border-white/10 rounded-xl text-xs text-[#F5F2ED] focus:outline-none focus:border-[#D4AF37]"
+                        className="w-full px-3 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
                       >
                         {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n} Passasjer{n > 1 ? 'er' : ''}</option>)}
                       </select>
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Bagasje</label>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Kofferter</label>
                       <select
                         value={luggage}
                         onChange={(e) => setLuggage(Number(e.target.value))}
-                        className="w-full px-3 py-2.5 bg-[#0D121D] border border-white/10 rounded-xl text-xs text-[#F5F2ED] focus:outline-none focus:border-[#D4AF37]"
+                        className="w-full px-3 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
                       >
                         {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n} Koffert{n !== 1 ? 'er' : ''}</option>)}
                       </select>
                     </div>
 
                     <div className="col-span-2">
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-[11px] font-bold text-slate-400 uppercase">Bestill for</label>
-                        {!isDriverAvailable && (
-                          <span className="text-[10px] text-rose-400 font-bold flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                            Direkte tur utilgjengelig
-                          </span>
-                        )}
-                      </div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Tidspunkt</label>
                       <div className="flex gap-2">
                         <button
                           type="button"
                           onClick={() => setIsPreorder(false)}
-                          className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-1.5 ${
+                          className={`flex-1 py-2 px-2.5 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                             !isPreorder
-                              ? isDriverAvailable
-                                ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37] shadow-md'
-                                : 'bg-rose-950/40 text-rose-300 border-rose-500/40'
-                              : 'bg-[#0D121D] text-slate-300 border-white/10 hover:border-white/20'
+                              ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37] font-black shadow-md'
+                              : 'bg-[#090D16] text-slate-300 border-white/10 hover:border-white/20'
                           }`}
                         >
                           <Clock className="w-3.5 h-3.5" />
-                          NÅ DIREKTE {isDriverAvailable ? '(Ledig bil)' : '(Ingen bil)'}
+                          NÅ DIREKTE
                         </button>
                         <button
                           type="button"
                           onClick={() => setIsPreorder(true)}
-                          className={`flex-1 py-2.5 px-3 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-1.5 ${
+                          className={`flex-1 py-2 px-2.5 text-xs font-bold rounded-xl border transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                             isPreorder
-                              ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37] shadow-md'
-                              : 'bg-[#0D121D] text-slate-300 border-white/10 hover:border-white/20'
+                              ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37] font-black shadow-md'
+                              : 'bg-[#090D16] text-slate-300 border-white/10 hover:border-white/20'
                           }`}
                         >
                           <Calendar className="w-3.5 h-3.5" />
-                          FORHÅNDSBESTILLING
+                          FORHÅNDSBESTILL
                         </button>
                       </div>
                     </div>
                   </div>
 
                   {isPreorder && (
-                    <div className="pt-2 bg-white/5 border border-white/10 p-3.5 rounded-2xl space-y-2">
+                    <div className="p-3.5 bg-white/5 border border-white/10 rounded-2xl space-y-2">
                       <label className="block text-[11px] font-bold text-[#D4AF37] uppercase">Dato og tidspunkt for henting *</label>
                       <input
                         type="datetime-local"
                         required={isPreorder}
                         value={scheduledTime}
                         onChange={(e) => setScheduledTime(e.target.value)}
-                        className="w-full px-3.5 py-2.5 bg-[#0D121D] border border-white/10 rounded-xl text-xs text-[#F5F2ED] focus:outline-none focus:border-[#D4AF37]"
+                        className="w-full px-3.5 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
                       />
-                      <p className="text-[10px] text-slate-400">
-                        Vi reserverer og tildeler en ledig bil til det valgte tidspunktet.
-                      </p>
                     </div>
                   )}
+                </div>
+
+                {/* 4. PREFERENCES & SPECIAL REQUESTS */}
+                <div className="space-y-3 pt-4 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setShowPreferences(!showPreferences)}
+                    className="w-full flex justify-between items-center text-xs font-black uppercase tracking-wider text-slate-300 hover:text-white transition-all cursor-pointer py-1"
+                  >
+                    <span className="flex items-center gap-2 text-[#D4AF37]">
+                      <Sparkles className="w-4 h-4" />
+                      4. Tilleggsvalg & Spesialønsker (Valgfritt)
+                    </span>
+                    <span className="flex items-center gap-1 text-[11px] text-slate-400 font-normal normal-case">
+                      {showPreferences ? 'Skjul' : 'Vis valg'}
+                      {showPreferences ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </span>
+                  </button>
+
+                  {showPreferences && (
+                    <div className="bg-[#090D16] p-4 rounded-2xl border border-white/10 space-y-4 animate-slide-up text-xs">
+                      
+                      {/* QUIET RIDE TOGGLE */}
+                      <div className="flex justify-between items-center py-2 border-b border-white/5">
+                        <div className="flex items-center gap-2.5">
+                          <VolumeX className="w-4 h-4 text-[#D4AF37]" />
+                          <div>
+                            <span className="font-bold text-white block">Stille tur (Quiet Ride)</span>
+                            <span className="text-[10px] text-slate-400">Privat atmosfære – sjåføren holder prat til et minimum.</span>
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={quietRide}
+                          onChange={(e) => setQuietRide(e.target.checked)}
+                          className="w-4 h-4 accent-[#D4AF37] cursor-pointer"
+                        />
+                      </div>
+
+                      {/* TEMPERATURE */}
+                      <div className="flex justify-between items-center py-2 border-b border-white/5">
+                        <div className="flex items-center gap-2.5">
+                          <Thermometer className="w-4 h-4 text-cyan-400" />
+                          <div>
+                            <span className="font-bold text-white block">Kupétemperatur</span>
+                            <span className="text-[10px] text-slate-400">Foretrukket temperatur under turen.</span>
+                          </div>
+                        </div>
+                        <div className="flex gap-1.5">
+                          {[
+                            { id: 'cool', label: 'Kjølig' },
+                            { id: 'normal', label: 'Standard' },
+                            { id: 'warm', label: 'Varmt' }
+                          ].map((t) => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => setTemperature(t.id as any)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                                temperature === t.id
+                                  ? 'bg-[#D4AF37] text-slate-950 font-black'
+                                  : 'bg-white/5 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* LUGGAGE HELP & SPECIALS */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <label className="flex items-center gap-2.5 p-2.5 bg-white/5 rounded-xl border border-white/5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={luggageHelp}
+                            onChange={(e) => setLuggageHelp(e.target.checked)}
+                            className="w-4 h-4 accent-[#D4AF37]"
+                          />
+                          <span className="text-[11px] text-slate-200">Bagasjehjelp til/fra døren</span>
+                        </label>
+
+                        <label className="flex items-center gap-2.5 p-2.5 bg-white/5 rounded-xl border border-white/5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={childSeat}
+                            onChange={(e) => setChildSeat(e.target.checked)}
+                            className="w-4 h-4 accent-[#D4AF37]"
+                          />
+                          <span className="text-[11px] text-slate-200">Barnesete / Sittepute</span>
+                        </label>
+
+                        <label className="flex items-center gap-2.5 p-2.5 bg-white/5 rounded-xl border border-white/5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={petFriendly}
+                            onChange={(e) => setPetFriendly(e.target.checked)}
+                            className="w-4 h-4 accent-[#D4AF37]"
+                          />
+                          <span className="text-[11px] text-slate-200">Kjæledyr i bur tillatt</span>
+                        </label>
+
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Flynummer (f.eks. DY142)"
+                            value={flightNumber}
+                            onChange={(e) => setFlightNumber(e.target.value.toUpperCase())}
+                            className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-[11px] text-white uppercase focus:outline-none focus:border-[#D4AF37]"
+                          />
+                        </div>
+                      </div>
+
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. CONTACT DETAILS */}
+                <div className="space-y-4 pt-4 border-t border-white/10">
+                  <h3 className="text-xs font-black tracking-wider text-[#D4AF37] uppercase flex items-center gap-2">
+                    <User className="w-4 h-4" />
+                    5. Kontaktinformasjon
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Navn *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ola Nordmann"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Telefon *</label>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="+47 900 00 000"
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">E-post *</label>
+                      <input
+                        type="email"
+                        required
+                        placeholder="ola@epost.no"
+                        value={customerEmail}
+                        onChange={(e) => setCustomerEmail(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
+                      />
+                    </div>
+                  </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Kommentar til sjåfør (Valgfritt)</label>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Beskjed til sjåfør (Valgfritt)</label>
                     <textarea
                       rows={2}
-                      placeholder="F.eks. spesielle behov, ekstra stor koffert eller møtested ved utgangen"
+                      placeholder="F.eks. Møtested ved hovedinngangen, ekstra bagasje, rullestol eller spesielle ønsker..."
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-[#0D121D] border border-white/10 rounded-xl text-xs text-[#F5F2ED] focus:outline-none focus:border-[#D4AF37]"
+                      className="w-full px-3.5 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
                     />
                   </div>
                 </div>
 
-                {/* PAYMENT METHOD */}
+                {/* 6. PAYMENT METHOD */}
                 <div className="space-y-3 pt-4 border-t border-white/10">
-                  <label className="block text-xs font-bold text-[#D4AF37] uppercase tracking-wider">
-                    Betalingsmåte
+                  <label className="block text-xs font-black text-[#D4AF37] uppercase tracking-wider">
+                    6. Betalingsmåte
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                     {[
@@ -720,10 +1038,10 @@ export const OrderPage: React.FC = () => {
                         key={pm.id}
                         type="button"
                         onClick={() => setPaymentMethod(pm.id as any)}
-                        className={`py-2.5 px-3 rounded-xl border text-center font-bold uppercase transition-all ${
+                        className={`py-2.5 px-3 rounded-xl border text-center font-bold uppercase transition-all cursor-pointer ${
                           paymentMethod === pm.id
-                            ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37]'
-                            : 'bg-[#0D121D] text-slate-300 border-white/10 hover:border-white/20'
+                            ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37] font-black'
+                            : 'bg-[#090D16] text-slate-300 border-white/10 hover:border-white/20'
                         }`}
                       >
                         {pm.name}
@@ -732,15 +1050,58 @@ export const OrderPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* SUBMIT BUTTON WITH DRIVER AVAILABILITY CHECK */}
-                <div className="space-y-2.5 pt-2">
+                {/* 7. RABATTKODE (CLEAN & SIMPLE INPUT) */}
+                <div className="pt-4 border-t border-white/10 space-y-2">
+                  <label className="block text-xs font-bold text-slate-300">
+                    Rabattkode (Valgfritt)
+                  </label>
+                  {appliedCoupon ? (
+                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex justify-between items-center text-xs">
+                      <div className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-400" />
+                        <span className="font-mono font-bold text-emerald-300">{appliedCoupon.code}</span>
+                        <span className="text-slate-400">({appliedCoupon.discountDescription})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleRemoveCoupon}
+                        className="text-xs text-rose-400 hover:underline cursor-pointer font-bold"
+                      >
+                        Fjern
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="Skriv inn rabattkode..."
+                          value={couponCodeInput}
+                          onChange={(e) => setCouponCodeInput(e.target.value.toUpperCase())}
+                          className="flex-1 px-3.5 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white font-mono placeholder-slate-500 uppercase focus:outline-none focus:border-[#D4AF37]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleApplyCoupon()}
+                          className="px-5 py-2.5 bg-white/10 hover:bg-[#D4AF37] hover:text-slate-950 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer border border-white/10"
+                        >
+                          Bruk
+                        </button>
+                      </div>
+                      {couponError && <p className="text-[11px] text-rose-400">{couponError}</p>}
+                    </div>
+                  )}
+                </div>
+
+                {/* SUBMIT BUTTON */}
+                <div className="space-y-2.5 pt-3">
                   <button
                     type="submit"
                     disabled={submitting || calculating || (!isPreorder && !isDriverAvailable)}
-                    className={`w-full py-4 rounded-full font-extrabold text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
+                    className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
                       !isPreorder && !isDriverAvailable
                         ? 'bg-[#151c28] text-slate-400 border border-white/10 cursor-not-allowed opacity-85'
-                        : 'bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] hover:brightness-110 text-slate-950 shadow-xl shadow-[#D4AF37]/20 cursor-pointer'
+                        : 'bg-gradient-to-r from-[#D4AF37] via-[#F5D77F] to-[#C5A028] hover:brightness-110 text-slate-950 shadow-2xl shadow-[#D4AF37]/25 cursor-pointer'
                     }`}
                   >
                     {submitting ? (
@@ -751,16 +1112,16 @@ export const OrderPage: React.FC = () => {
                     ) : !isPreorder && !isDriverAvailable ? (
                       <>
                         <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                        Ingen sjåfør ledig – Kan ikke bestille direkte nå
+                        Ingen sjåfør ledig nå – Velg Forhåndsbestilling
                       </>
                     ) : isPreorder ? (
                       <>
-                        Bekreft forhåndsbestilling ({priceDetails ? `${priceDetails.totalPrice} NOK` : 'Beregner...'})
+                        Bekreft Forhåndsbestilling ({finalPayablePrice > 0 ? `${finalPayablePrice} NOK` : 'Beregner...'})
                         <ArrowRight className="w-4 h-4" />
                       </>
                     ) : (
                       <>
-                        Bekreft og bestill taxi nå ({priceDetails ? `${priceDetails.totalPrice} NOK` : 'Beregner...'})
+                        Bekreft & Bestill Nå ({finalPayablePrice > 0 ? `${finalPayablePrice} NOK` : 'Beregner...'})
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}
@@ -768,7 +1129,7 @@ export const OrderPage: React.FC = () => {
 
                   {!isPreorder && !isDriverAvailable && (
                     <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-center text-xs text-rose-300">
-                      Direkte bestilling er midlertidig stengt fordi ingen sjåfør er ledig. Klikk på <b>«FORHÅNDSBESTILLING»</b> ovenfor for å bestille for senere, eller vent til en bil logger på.
+                      Direkte bestilling er midlertidig stengt da alle biler er opptatt. Klikk på <b>«FORHÅNDSBESTILL»</b> for å reservere bil til senere tidspunkt.
                     </div>
                   )}
                 </div>
@@ -779,10 +1140,10 @@ export const OrderPage: React.FC = () => {
               <div className="lg:col-span-5 space-y-6">
                 
                 {/* LEAFLET MAP PREVIEW */}
-                <div className="bg-[#121722]/90 border border-white/10 rounded-2xl p-4 shadow-xl space-y-2">
-                  <div className="flex justify-between items-center text-xs text-slate-400">
-                    <span className="font-bold text-slate-200 uppercase tracking-wider">Kartvisning over Ruten</span>
-                    <span>OSRM Veiberegning</span>
+                <div className="bg-[#0E131F]/90 border border-white/10 rounded-3xl p-4 shadow-2xl space-y-2 backdrop-blur-xl">
+                  <div className="flex justify-between items-center text-xs text-slate-400 px-1">
+                    <span className="font-bold text-slate-200 uppercase tracking-wider">Ruteberegning</span>
+                    <span className="text-[#D4AF37] font-mono text-[10px]">Raskeste Vei</span>
                   </div>
                   
                   <LeafletMap
@@ -792,60 +1153,130 @@ export const OrderPage: React.FC = () => {
                   />
                 </div>
 
-                {/* PRICING BREAKDOWN CARD */}
-                <div className="bg-[#121722]/90 border border-white/10 rounded-2xl p-6 shadow-xl space-y-4">
-                  <h3 className="text-xs font-bold tracking-wider text-[#D4AF37] uppercase">
-                    Prisberegning & Avstand
-                  </h3>
+                {/* PRICING BREAKDOWN CARD WITH START FEE & AIRPORT FEE */}
+                <div className="bg-[#0E131F]/90 border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4 backdrop-blur-xl">
+                  <div className="flex justify-between items-center pb-2 border-b border-white/10">
+                    <h3 className="text-xs font-black tracking-wider text-[#D4AF37] uppercase flex items-center gap-2">
+                      <DollarSign className="w-4 h-4" />
+                      Prisberegning & Spesifikasjon
+                    </h3>
+                    <span className="px-2.5 py-0.5 bg-[#D4AF37]/15 border border-[#D4AF37]/30 text-[#D4AF37] text-[10px] font-black rounded-full uppercase">
+                      Fastpris
+                    </span>
+                  </div>
 
                   {calculating ? (
                     <div className="flex items-center gap-3 text-xs text-slate-400 py-6 justify-center">
                       <Loader2 className="w-5 h-5 animate-spin text-[#D4AF37]" />
-                      <span>Beregner rute via OSRM...</span>
+                      <span>Beregner rute og fastpris...</span>
                     </div>
                   ) : priceDetails && routeData ? (
-                    <div className="space-y-3 text-xs">
+                    <div className="space-y-2.5 text-xs">
                       
-                      <div className="flex justify-between items-center py-1.5 border-b border-white/10 text-slate-300">
-                        <span>Faktisk kjøreavstand:</span>
-                        <span className="font-mono font-bold text-[#F5F2ED]">{routeData.distanceKm} km</span>
+                      {/* STARTGEBYR */}
+                      <div className="flex justify-between items-center py-1 text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          <Car className="w-3.5 h-3.5 text-slate-400" />
+                          Startgebyr (oppstart):
+                        </span>
+                        <span className="font-mono font-bold text-white">{priceDetails.startFee} NOK</span>
                       </div>
 
-                      <div className="flex justify-between items-center py-1.5 border-b border-white/10 text-slate-300">
-                        <span>Estimert kjøretid:</span>
-                        <span className="font-mono font-bold text-[#F5F2ED]">{routeData.durationMinutes} min</span>
+                      {/* DISTANSE */}
+                      <div className="flex justify-between items-center py-1 text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-[#D4AF37]" />
+                          Kjøredistanse ({routeData.distanceKm} km á {priceDetails.ratePerKm} kr):
+                        </span>
+                        <span className="font-mono font-bold text-white">{priceDetails.distanceCost} NOK</span>
                       </div>
 
-                      <div className="flex justify-between items-center py-1.5 border-b border-white/10 text-slate-300">
-                        <span>Kilometersats ({priceDetails.isNight ? 'Kveld 20 NOK/km' : 'Dag 18 NOK/km'}):</span>
-                        <span className="font-mono text-[#F5F2ED]">{priceDetails.distanceCost} NOK</span>
+                      {/* TID */}
+                      <div className="flex justify-between items-center py-1 text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          Tidsberegning ({routeData.durationMinutes} min):
+                        </span>
+                        <span className="font-mono font-bold text-white">{priceDetails.timeCost} NOK</span>
                       </div>
 
-                      <div className="flex justify-between items-center py-1.5 border-b border-white/10 text-slate-300">
-                        <span>Startpris / Oppstartsgebyr:</span>
-                        <span className="font-mono text-[#F5F2ED]">{priceDetails.startFee} NOK</span>
+                      {/* FLYPLASSGEBYR */}
+                      <div className="flex justify-between items-center py-1 text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          <Plane className="w-3.5 h-3.5 text-sky-400" />
+                          Flyplassgebyr (Gardermoen/Torp):
+                        </span>
+                        <span className={`font-mono font-bold ${priceDetails.airportFee > 0 ? 'text-sky-300' : 'text-slate-500'}`}>
+                          {priceDetails.airportFee > 0 ? `${priceDetails.airportFee} NOK` : '0 NOK'}
+                        </span>
                       </div>
 
-                      {priceDetails.airportFee > 0 && (
-                        <div className="flex justify-between items-center py-1.5 border-b border-white/10 text-slate-300">
-                          <span>Flyplasstillegg:</span>
-                          <span className="font-mono text-[#F5F2ED]">{priceDetails.airportFee} NOK</span>
+                      {/* BILKLASSE TILLEGG HVIS VIP */}
+                      {currentTierObj.multiplier > 1 && (
+                        <div className="flex justify-between items-center py-1 text-slate-300">
+                          <span>Bilklasse ({currentTierObj.name}):</span>
+                          <span className="font-mono text-[#D4AF37]">
+                            +{Math.round((currentTierObj.multiplier - 1) * 100)}% ({currentTierObj.multiplier}x)
+                          </span>
                         </div>
                       )}
 
+                      {/* RABATT DERSOM AKTIV */}
+                      {appliedCoupon && discountAmount > 0 && (
+                        <div className="flex justify-between items-center py-1.5 text-emerald-400 bg-emerald-500/10 px-2 rounded-lg">
+                          <span className="font-bold">Rabatt ({appliedCoupon.code}):</span>
+                          <span className="font-mono font-black">-{discountAmount} NOK</span>
+                        </div>
+                      )}
+
+                      {/* TOTAL FASTPRIS */}
                       <div className="pt-3 flex justify-between items-center border-t border-white/10">
                         <div>
-                          <span className="block text-[10px] uppercase text-slate-400 font-bold">Fastpris før avreise</span>
-                          <span className="text-xl font-bold font-display text-[#D4AF37]">{priceDetails.totalPrice} NOK</span>
+                          <span className="block text-[10px] uppercase text-slate-400 font-bold">Total Fastpris</span>
+                          <div className="flex items-baseline gap-2">
+                            {discountAmount > 0 && (
+                              <span className="text-sm font-mono text-slate-500 line-through">
+                                {baseGrossPrice} NOK
+                              </span>
+                            )}
+                            <span className="text-2xl font-black font-display text-[#D4AF37]">
+                              {finalPayablePrice} NOK
+                            </span>
+                          </div>
                         </div>
-                        <span className="text-[10px] text-slate-400 bg-white/5 px-2.5 py-1 rounded-full border border-white/10">
-                          Inkl. 12% MVA
-                        </span>
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 bg-white/5 px-2.5 py-1 rounded-full border border-white/10 block">
+                            Inkl. 12% MVA
+                          </span>
+                          <span className="text-[9px] text-slate-500 mt-0.5 block">Ingen skjulte kostnader</span>
+                        </div>
                       </div>
 
                     </div>
                   ) : null}
 
+                </div>
+
+                {/* ARON TAXI GARANTI */}
+                <div className="bg-[#090D16] border border-white/10 rounded-2xl p-4 space-y-2 text-xs">
+                  <h4 className="text-[#D4AF37] font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5" />
+                    Aron Taxi Trygghetsgaranti
+                  </h4>
+                  <ul className="space-y-1.5 text-[11px] text-slate-400">
+                    <li className="flex items-center gap-2">
+                      <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                      Garantert fastpris – ingen taksameter-overraskelser
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                      Erfarne sjåfører med gyldig drosjeløyve
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                      100% utslippsfrie biler
+                    </li>
+                  </ul>
                 </div>
 
               </div>
