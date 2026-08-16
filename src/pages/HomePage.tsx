@@ -376,16 +376,16 @@ export const HomePage: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             
-            {/* CAR 1: TESLA MODEL Y JUNIPER */}
+            {/* CARD 1: TESLA MODEL Y JUNIPER */}
             <div className="bg-[#121722]/90 rounded-2xl border border-white/10 overflow-hidden group hover:border-[#D4AF37]/50 transition-all shadow-xl">
-              <div className="h-64 overflow-hidden relative">
+              <div className="h-64 overflow-hidden relative bg-black/40">
                 <img
                   src={OFFICIAL_ASSETS.teslaCars[0]}
                   alt="Tesla Model Y Juniper"
                   className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
                 />
                 <div className="absolute top-4 left-4 px-3 py-1 bg-black/80 backdrop-blur-md rounded-full text-[10px] font-bold text-[#D4AF37] border border-[#D4AF37]/30">
-                  100% ELEKTRISK · OS 10597
+                  100% ELEKTRISK · EXECUTIVE SUV
                 </div>
               </div>
               <div className="p-6 space-y-3">
@@ -393,47 +393,47 @@ export const HomePage: React.FC = () => {
                   <h3 className="font-display text-xl font-bold text-[#F5F2ED]">
                     Tesla Model Y Juniper
                   </h3>
-                  <span className="font-mono text-xs text-[#D4AF37] font-semibold">EP 17891</span>
+                  <span className="text-xs text-[#D4AF37] font-semibold">Oslo Taxi</span>
                 </div>
                 <p className="text-xs text-slate-400 font-light">
-                  Stille og romslig SUV med panorama glasstak og luksuriøs innredning.
+                  Den nye Tesla Model Y Juniper med panoramatak, god plass til kofferter, stillegående fremdrift og suveren komfort.
                 </p>
                 <Link
                   to="/biler"
                   className="inline-flex items-center gap-1.5 text-xs font-bold text-[#D4AF37] hover:underline"
                 >
-                  Se alle bilder og detaljer &rarr;
+                  Se detaljer og spesifikasjoner &rarr;
                 </Link>
               </div>
             </div>
 
-            {/* CAR 2: MERCEDES EQE */}
+            {/* CARD 2: MERCEDES-BENZ EQE SEDAN */}
             <div className="bg-[#121722]/90 rounded-2xl border border-white/10 overflow-hidden group hover:border-[#D4AF37]/50 transition-all shadow-xl">
-              <div className="h-64 overflow-hidden relative">
+              <div className="h-64 overflow-hidden relative bg-black/40">
                 <img
                   src={OFFICIAL_ASSETS.mercedesCars[0]}
-                  alt="Mercedes EQE"
+                  alt="Mercedes-Benz EQE Sedan"
                   className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
                 />
                 <div className="absolute top-4 left-4 px-3 py-1 bg-black/80 backdrop-blur-md rounded-full text-[10px] font-bold text-[#D4AF37] border border-[#D4AF37]/30">
-                  PREMIUM EXECUTIVE · OS 13937
+                  100% ELEKTRISK · EXECUTIVE LUXURY
                 </div>
               </div>
               <div className="p-6 space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="font-display text-xl font-bold text-[#F5F2ED]">
-                    Mercedes EQE
+                    Mercedes-Benz EQE Sedan
                   </h3>
-                  <span className="font-mono text-xs text-[#D4AF37] font-semibold">EF 79664</span>
+                  <span className="text-xs text-[#D4AF37] font-semibold">Oslo Taxi</span>
                 </div>
                 <p className="text-xs text-slate-400 font-light">
-                  Ekte tysk luksussedan med Airmatic luftfjæring og støydempet kabin.
+                  Luksuriøs tysk el-sedan med Airmatic adaptiv luftfjæring, MBUX Widescreen, enestående støydemping og VIP-komfort.
                 </p>
                 <Link
                   to="/biler"
                   className="inline-flex items-center gap-1.5 text-xs font-bold text-[#D4AF37] hover:underline"
                 >
-                  Se alle bilder og detaljer &rarr;
+                  Se detaljer og spesifikasjoner &rarr;
                 </Link>
               </div>
             </div>

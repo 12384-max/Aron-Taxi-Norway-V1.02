@@ -68,35 +68,35 @@ const VEHICLE_TIERS: TierOption[] = [
     id: 'vip_black',
     name: 'Aron Black VIP Executive',
     subtitle: 'Luksusklasse & Privatsjåfør',
-    description: 'Svart Tesla / Mercedes EQS, sotede ruter, dresskledd privatsjåfør, gratis mineralvann og mobilladere.',
+    description: 'Mercedes-Benz EQE Sedan / Tesla Model Y Juniper med dresskledd privatsjåfør, stillegående komfort, mineralvann og mobilladere.',
     multiplier: 1.25,
     seats: 4,
     luggageCap: 3,
     badge: 'Mest Populær VIP',
     popular: true,
-    carModel: 'Tesla Model Y / Mercedes EQS'
+    carModel: 'Mercedes-Benz EQE / Tesla Model Y'
   },
   {
     id: 'comfort_eco',
     name: 'Aron Comfort Electric',
     subtitle: 'Miljøvennlig & Stillegående',
-    description: '100% utslippsfri elbil med god plass, høy komfort og rask respons i hele Oslo.',
+    description: '100% utslippsfri Tesla Model Y Juniper med god plass til passasjerer og bagasje, rask respons i hele Oslo.',
     multiplier: 1.0,
     seats: 4,
     luggageCap: 2,
     badge: 'Standard Miljøtakst',
-    carModel: 'Tesla Model Y / Polestar 2'
+    carModel: 'Tesla Model Y Juniper'
   },
   {
     id: 'airport_vip',
     name: 'Aron Airport VIP Express',
     subtitle: 'Gardermoen Meet & Greet',
-    description: 'Dedikert flyplasstransport med flysporing, personlig velkomst i ankomsthallen og bagasjehjelp.',
+    description: 'Dedikert flyplasstransport med Mercedes-Benz EQE eller Tesla Model Y Juniper, flysporing og personlig velkomst.',
     multiplier: 1.30,
     seats: 4,
     luggageCap: 4,
     badge: 'Flyplass VIP',
-    carModel: 'Executive Sedan / SUV'
+    carModel: 'Mercedes-Benz EQE Sedan'
   }
 ];
 

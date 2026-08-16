@@ -7,30 +7,8 @@ import { queryTripsFromFirestore, TripQueryFilter, TripQueryResult } from '../se
 import { removeUndefinedFields } from '../utils/firestoreHelper';
 import { notificationService } from '../services/notificationService';
 
-const INITIAL_CUSTOMERS: UserProfile[] = [
-  {
-    uid: 'cust_sample_1',
-    name: 'Henrik Solberg',
-    email: 'henrik.solberg@gmail.com',
-    phone: '+47 912 34 567',
-    role: 'customer',
-    address: 'Frognerveien 12, 0263 Oslo',
-    postalCode: '0263',
-    password: 'password123',
-    createdAt: new Date(Date.now() - 86400000 * 5).toISOString()
-  },
-  {
-    uid: 'cust_sample_2',
-    name: 'Astrid Lind',
-    email: 'astrid.lind@bedrift.no',
-    phone: '+47 480 99 112',
-    role: 'customer',
-    address: 'Storgata 33, 0184 Oslo',
-    postalCode: '0184',
-    password: 'password123',
-    createdAt: new Date(Date.now() - 86400000 * 2).toISOString()
-  }
-];
+// No demo customers - only real registered users from Firestore
+const INITIAL_CUSTOMERS: UserProfile[] = [];
 
 interface TripContextType {
   trips: Trip[];
@@ -95,12 +73,29 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const [vehicles, setVehicles] = useState<Vehicle[]>(() => {
     const saved = localStorage.getItem('aron_vehicles');
-    return saved ? JSON.parse(saved) : INITIAL_VEHICLES;
+    if (saved) {
+      try {
+        const parsed: Vehicle[] = JSON.parse(saved);
+        // Ensure strictly only the 2 official vehicles (v1 Tesla Model Y Juniper, v2 Mercedes-Benz EQE Sedan)
+        const validVehicles = parsed.filter(v => v.id === 'v1' || v.id === 'v2').map(v => {
+          const initMatch = INITIAL_VEHICLES.find(iv => iv.id === v.id);
+          return initMatch ? { ...v, imageUrls: initMatch.imageUrls, model: initMatch.model } : v;
+        });
+        if (validVehicles.length === 2) {
+          return validVehicles;
+        }
+      } catch (e) {}
+    }
+    return INITIAL_VEHICLES;
   });
 
   const [customers, setCustomers] = useState<UserProfile[]>(() => {
     const saved = localStorage.getItem('aron_customers');
-    return saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
+    if (saved) {
+      const parsed: UserProfile[] = JSON.parse(saved);
+      return parsed.filter(c => !c.uid.startsWith('cust_sample_'));
+    }
+    return [];
   });
 
   const [pricing, setPricing] = useState<PricingConfig>(() => {
@@ -187,10 +182,6 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         INITIAL_VEHICLES.forEach((vehicle) => {
           setDoc(doc(db, 'vehicles', vehicle.id), vehicle, { merge: true }).catch(() => {});
         });
-
-        INITIAL_CUSTOMERS.forEach((customer) => {
-          setDoc(doc(db, 'users', customer.uid), customer, { merge: true }).catch(() => {});
-        });
       } catch (e) {}
     }
 
@@ -198,7 +189,12 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Firestore live snapshot listeners that accurately reflect additions AND deletions
       const tripsUnsub = onSnapshot(collection(db, 'trips'), (snapshot) => {
         const fsTrips: Trip[] = [];
-        snapshot.forEach((d) => fsTrips.push(d.data() as Trip));
+        snapshot.forEach((d) => {
+          const data = d.data() as Trip;
+          if (data && data.id && !data.id.startsWith('demo_')) {
+            fsTrips.push(data);
+          }
+        });
         // Sort newest first
         fsTrips.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
         setTrips(fsTrips);
@@ -214,16 +210,29 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       const vehiclesUnsub = onSnapshot(collection(db, 'vehicles'), (snapshot) => {
         const fsVehicles: Vehicle[] = [];
-        snapshot.forEach((d) => fsVehicles.push(d.data() as Vehicle));
-        setVehicles(fsVehicles);
-        localStorage.setItem('aron_vehicles', JSON.stringify(fsVehicles));
+        snapshot.forEach((d) => {
+          const v = d.data() as Vehicle;
+          if (v && (v.id === 'v1' || v.id === 'v2')) {
+            const initMatch = INITIAL_VEHICLES.find(iv => iv.id === v.id);
+            fsVehicles.push(initMatch ? { ...v, imageUrls: initMatch.imageUrls, model: initMatch.model } : v);
+          }
+        });
+        if (fsVehicles.length > 0) {
+          setVehicles(fsVehicles);
+          localStorage.setItem('aron_vehicles', JSON.stringify(fsVehicles));
+        } else {
+          setVehicles(INITIAL_VEHICLES);
+          localStorage.setItem('aron_vehicles', JSON.stringify(INITIAL_VEHICLES));
+        }
       }, (err) => console.log('Firestore vehicle listener note:', err.message));
 
       const usersUnsub = onSnapshot(collection(db, 'users'), (snapshot) => {
         const fsUsers: UserProfile[] = [];
         snapshot.forEach((d) => {
           const data = d.data() as UserProfile;
-          fsUsers.push(data);
+          if (data && data.uid && !data.uid.startsWith('cust_sample_')) {
+            fsUsers.push(data);
+          }
         });
         setCustomers(fsUsers);
         localStorage.setItem('aron_customers', JSON.stringify(fsUsers));
@@ -668,7 +677,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         actionUrl: '/admin',
         soundType: 'ping'
       });
-    } else if (status === 'in_progress' || status === 'picked_up') {
+    } else if (status === 'trip_started' || status === 'active') {
       // Customer: trip started acceleration tone
       notificationService.notify({
         title: '🛣️ Turen har startet',

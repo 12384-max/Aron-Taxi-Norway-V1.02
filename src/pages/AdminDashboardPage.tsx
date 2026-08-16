@@ -117,72 +117,14 @@ export const AdminDashboardPage: React.FC = () => {
   const [tripFilter, setTripFilter] = useState<string>('all');
   const [selectedInvoiceTrip, setSelectedInvoiceTrip] = useState<Trip | null>(null);
 
-  // 1. INVOICES STATE
+  // 1. INVOICES STATE (Real data only, no demo cards)
   const [invoices, setInvoices] = useState<Invoice[]>(() => {
     const saved = localStorage.getItem('aron_admin_invoices');
-    if (saved) return JSON.parse(saved);
-    return [
-      {
-        id: 'FAKT-2026-1001',
-        customerName: 'Grand Hotel Oslo',
-        customerEmail: 'booking@grand.no',
-        customerPhone: '+47 23 21 20 00',
-        companyName: 'Grand Hotel AS',
-        orgNumber: '982 112 334',
-        kidNumber: '2026880012',
-        issueDate: '2026-08-01',
-        dueDate: '2026-08-15',
-        pickupAddress: 'Karl Johans gate 31, 0159 Oslo',
-        destinationAddress: 'Oslo Lufthavn Gardermoen',
-        distanceKm: 48,
-        amountExVat: 3473,
-        vatRate: 12,
-        vatAmount: 417,
-        totalAmount: 3890,
-        status: 'paid',
-        paymentMethod: 'invoice',
-        notes: 'VIP transport direktør og gjester'
-      },
-      {
-        id: 'FAKT-2026-1002',
-        customerName: 'Radisson Blu Plaza',
-        customerEmail: 'dispatch@radissonplaza.no',
-        customerPhone: '+47 22 05 80 00',
-        companyName: 'Radisson Plaza Hotel Drift AS',
-        orgNumber: '971 445 667',
-        kidNumber: '2026880013',
-        issueDate: '2026-08-10',
-        dueDate: '2026-08-24',
-        pickupAddress: 'Sonja Henies plass 3, 0185 Oslo',
-        destinationAddress: 'Fornebu IT Park, Snarøyveien',
-        distanceKm: 14,
-        amountExVat: 5759,
-        vatRate: 12,
-        vatAmount: 691,
-        totalAmount: 6450,
-        status: 'unpaid',
-        paymentMethod: 'invoice',
-        notes: 'Samlefaktura uke 32 konferansegjester'
-      },
-      {
-        id: 'FAKT-2026-1003',
-        customerName: 'Henrik Solberg',
-        customerEmail: 'henrik.solberg@gmail.com',
-        customerPhone: '+47 912 34 567',
-        kidNumber: '2026880014',
-        issueDate: '2026-08-12',
-        dueDate: '2026-08-26',
-        pickupAddress: 'Frognerveien 12, 0263 Oslo',
-        destinationAddress: 'Oslo S, Jernbanetorget',
-        distanceKm: 4.2,
-        amountExVat: 795,
-        vatRate: 12,
-        vatAmount: 95,
-        totalAmount: 890,
-        status: 'paid',
-        paymentMethod: 'vipps'
-      }
-    ];
+    if (saved) {
+      const parsed: Invoice[] = JSON.parse(saved);
+      return parsed.filter(i => !i.id.startsWith('FAKT-2026-100'));
+    }
+    return [];
   });
 
   // 2. SURGE ZONES STATE
@@ -190,141 +132,42 @@ export const AdminDashboardPage: React.FC = () => {
     const saved = localStorage.getItem('aron_admin_surge');
     if (saved) return JSON.parse(saved);
     return [
-      { id: 'sz1', name: 'Oslo S & Jernbanetorget', multiplier: 1.4, radiusKm: 1.5, centerLat: 59.9112, centerLng: 10.7505, lat: 59.9112, lng: 10.7505, isActive: true, category: 'Sentrum' },
-      { id: 'sz2', name: 'Oslo Lufthavn Gardermoen', multiplier: 1.2, radiusKm: 4.0, centerLat: 60.1975, centerLng: 11.1004, lat: 60.1975, lng: 11.1004, isActive: false, category: 'Flyplass' },
-      { id: 'sz3', name: 'Aker Brygge & Tjuvholmen', multiplier: 1.5, radiusKm: 1.2, centerLat: 59.9098, centerLng: 10.7247, lat: 59.9098, lng: 10.7247, isActive: true, category: 'Natteliv' },
-      { id: 'sz4', name: 'Majorstuen & Bogstadveien', multiplier: 1.3, radiusKm: 1.5, centerLat: 59.9304, centerLng: 10.7144, lat: 59.9304, lng: 10.7144, isActive: false, category: 'Sentrum' },
-      { id: 'sz5', name: 'Telenor Arena & Fornebu', multiplier: 1.3, radiusKm: 2.0, centerLat: 59.9022, centerLng: 10.6234, lat: 59.9022, lng: 10.6234, isActive: false, category: 'Arrangement' }
+      { id: 'sz1', name: 'Oslo S & Jernbanetorget', multiplier: 1.0, radiusKm: 1.5, centerLat: 59.9112, centerLng: 10.7505, lat: 59.9112, lng: 10.7505, isActive: false, category: 'Sentrum' },
+      { id: 'sz2', name: 'Oslo Lufthavn Gardermoen', multiplier: 1.0, radiusKm: 4.0, centerLat: 60.1975, centerLng: 11.1004, lat: 60.1975, lng: 11.1004, isActive: false, category: 'Flyplass' },
+      { id: 'sz3', name: 'Aker Brygge & Tjuvholmen', multiplier: 1.0, radiusKm: 1.2, centerLat: 59.9098, centerLng: 10.7247, lat: 59.9098, lng: 10.7247, isActive: false, category: 'Natteliv' },
+      { id: 'sz4', name: 'Majorstuen & Bogstadveien', multiplier: 1.0, radiusKm: 1.5, centerLat: 59.9304, centerLng: 10.7144, lat: 59.9304, lng: 10.7144, isActive: false, category: 'Sentrum' },
+      { id: 'sz5', name: 'Telenor Arena & Fornebu', multiplier: 1.0, radiusKm: 2.0, centerLat: 59.9022, centerLng: 10.6234, lat: 59.9022, lng: 10.6234, isActive: false, category: 'Arrangement' }
     ];
   });
 
-  // 3. CORPORATE PARTNERS STATE
+  // 3. CORPORATE PARTNERS STATE (Real data only, no demo cards)
   const [partners, setPartners] = useState<CorporatePartner[]>(() => {
     const saved = localStorage.getItem('aron_admin_partners');
-    if (saved) return JSON.parse(saved);
-    return [
-      {
-        id: 'cp1',
-        companyName: 'Grand Hotel Oslo',
-        orgNumber: '982 112 334',
-        contactPerson: 'Karoline Berg',
-        contactEmail: 'booking@grand.no',
-        email: 'booking@grand.no',
-        contactPhone: '+47 23 21 20 00',
-        phone: '+47 23 21 20 00',
-        billingAddress: 'Karl Johans gate 31, 0159 Oslo',
-        billingCycle: 'monthly',
-        creditLimit: 150000,
-        currentBalance: 42500,
-        discountPercent: 12,
-        status: 'active',
-        createdAt: '2026-01-10T10:00:00Z'
-      },
-      {
-        id: 'cp2',
-        companyName: 'Radisson Blu Plaza Oslo',
-        orgNumber: '971 445 667',
-        contactPerson: 'Morten Dahl',
-        contactEmail: 'dispatch@radissonplaza.no',
-        email: 'dispatch@radissonplaza.no',
-        contactPhone: '+47 22 05 80 00',
-        phone: '+47 22 05 80 00',
-        billingAddress: 'Sonja Henies plass 3, 0185 Oslo',
-        billingCycle: 'monthly',
-        creditLimit: 200000,
-        currentBalance: 78900,
-        discountPercent: 15,
-        status: 'active',
-        createdAt: '2026-01-15T12:00:00Z'
-      },
-      {
-        id: 'cp3',
-        companyName: 'DNB Hovedkontor Bjørvika',
-        orgNumber: '984 851 006',
-        contactPerson: 'Elin Haugen',
-        contactEmail: 'reise@dnb.no',
-        email: 'reise@dnb.no',
-        contactPhone: '+47 915 04 800',
-        phone: '+47 915 04 800',
-        billingAddress: 'Dronning Eufemias gate 30, 0191 Oslo',
-        billingCycle: 'monthly',
-        creditLimit: 300000,
-        currentBalance: 124000,
-        discountPercent: 18,
-        status: 'active',
-        createdAt: '2026-02-01T09:00:00Z'
-      }
-    ];
+    if (saved) {
+      const parsed: CorporatePartner[] = JSON.parse(saved);
+      return parsed.filter(p => !['cp1', 'cp2', 'cp3'].includes(p.id));
+    }
+    return [];
   });
 
-  // 4. COUPONS STATE
+  // 4. COUPONS STATE (Real data only)
   const [coupons, setCoupons] = useState<Coupon[]>(() => {
     const saved = localStorage.getItem('aron_admin_coupons');
-    if (saved) return JSON.parse(saved);
-    return [
-      {
-        id: 'c1',
-        code: 'VELKOMMEN2026',
-        discountType: 'percentage',
-        discountValue: 15,
-        maxUses: 500,
-        usedCount: 48,
-        expiryDate: '2026-12-31',
-        isActive: true,
-        minTripAmount: 150,
-        description: 'Velkomstrabatt for nye passasjerer i Oslo'
-      },
-      {
-        id: 'c2',
-        code: 'FLYPLASS100',
-        discountType: 'fixed',
-        discountValue: 100,
-        maxUses: 200,
-        usedCount: 84,
-        expiryDate: '2026-11-30',
-        isActive: true,
-        minTripAmount: 600,
-        description: 'Fast avslag på flyplasstransport med Aron Taxi'
-      },
-      {
-        id: 'c3',
-        code: 'ARONVIP',
-        discountType: 'percentage',
-        discountValue: 20,
-        maxUses: 100,
-        usedCount: 19,
-        expiryDate: '2026-12-31',
-        isActive: true,
-        minTripAmount: 300,
-        description: 'Eksklusiv rabatt for faste bedriftskunder'
-      }
-    ];
+    if (saved) {
+      const parsed: Coupon[] = JSON.parse(saved);
+      return parsed.filter(c => !['c1', 'c2', 'c3'].includes(c.id));
+    }
+    return [];
   });
 
-  // 5. NOTIFICATIONS STATE
+  // 5. NOTIFICATIONS STATE (Real data only)
   const [notifications, setNotifications] = useState<BroadcastNotification[]>(() => {
     const saved = localStorage.getItem('aron_admin_notifications');
-    if (saved) return JSON.parse(saved);
-    return [
-      {
-        id: 'n1',
-        title: 'Høy etterspørsel i helgen',
-        message: 'Vi opplever stor pågang i Oslo sentrum og Majorstuen. Surge-tillegg er aktivert.',
-        target: 'drivers',
-        channel: 'push',
-        sentAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-        deliveredCount: 18
-      },
-      {
-        id: 'n2',
-        title: 'Aron Taxi Flåteoppdatering',
-        message: 'Nye Tesla Model Y Juniper og Mercedes EQE biler er nå tilgjengelige i appen.',
-        target: 'all',
-        channel: 'system',
-        sentAt: new Date(Date.now() - 86400000).toISOString(),
-        deliveredCount: 142
-      }
-    ];
+    if (saved) {
+      const parsed: BroadcastNotification[] = JSON.parse(saved);
+      return parsed.filter(n => !['n1', 'n2'].includes(n.id));
+    }
+    return [];
   });
 
   // HANDLERS FOR NEW TABS
@@ -2452,9 +2295,15 @@ export const AdminDashboardPage: React.FC = () => {
                             {v.year}
                           </span>
                         </div>
-                        <span className="text-xs font-mono font-bold text-[#D4AF37] bg-white/5 px-2 py-0.5 rounded inline-block mt-1">
-                          Skilt: {v.licensePlate}
-                        </span>
+                        {v.licensePlate ? (
+                          <span className="text-xs font-mono font-bold text-[#D4AF37] bg-white/5 px-2 py-0.5 rounded inline-block mt-1">
+                            Skilt: {v.licensePlate}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold text-[#D4AF37] bg-[#D4AF37]/10 px-2 py-0.5 rounded inline-block mt-1">
+                            100% Elektrisk
+                          </span>
+                        )}
                       </div>
 
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${

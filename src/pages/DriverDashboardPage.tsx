@@ -1263,46 +1263,87 @@ export const DriverDashboardPage: React.FC = () => {
               </button>
             </div>
 
-            <div className="bg-[#111827] border border-white/10 rounded-3xl p-6 sm:p-8 space-y-6">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                  <span className="text-[10px] font-black text-[#34D186] uppercase tracking-widest block">
-                    AKTIV BIL FOR VAKTEN
+            <div className="space-y-6">
+              <div className="bg-[#111827] border border-white/10 rounded-3xl p-6 sm:p-8 space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <span className="text-[10px] font-black text-[#34D186] uppercase tracking-widest block">
+                      AKTIV BIL FOR VAKTEN
+                    </span>
+                    <h2 className="text-2xl font-black text-white">
+                      {currentDriver.vehicleName || 'Tesla Model Y Juniper'}
+                    </h2>
+                  </div>
+                  <span className="px-4 py-2 bg-black/60 border border-[#34D186]/30 font-mono text-sm font-black text-[#34D186] rounded-2xl">
+                    100% Elektrisk Drosje
                   </span>
-                  <h2 className="text-2xl font-black text-white">
-                    {currentDriver.vehicleName || 'Tesla Model Y Long Range'}
-                  </h2>
                 </div>
-                <span className="px-4 py-2 bg-black/60 border border-white/10 font-mono text-sm font-black text-[#34D186] rounded-2xl">
-                  {currentDriver.vehiclePlate || 'EK 98765'}
-                </span>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-white/10 text-xs">
-                <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
-                  <span className="text-slate-400 block mb-1">Løyvenummer</span>
-                  <span className="font-black text-white font-mono text-sm">{currentDriver.permitNumber || 'OS 10597'}</span>
-                </div>
-                <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
-                  <span className="text-slate-400 block mb-1">Kjøreseddel</span>
-                  <span className="font-black text-white font-mono text-sm">{currentDriver.licenseNumber}</span>
-                </div>
-                <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
-                  <span className="text-slate-400 block mb-1">Drivlinje</span>
-                  <span className="font-black text-[#34D186] text-sm">100% Elektrisk</span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-white/10 text-xs">
+                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
+                    <span className="text-slate-400 block mb-1">Drosjeløyve</span>
+                    <span className="font-black text-white font-mono text-sm">{currentDriver.permitNumber || 'Registrert Løyve'}</span>
+                  </div>
+                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
+                    <span className="text-slate-400 block mb-1">Kjøreseddel</span>
+                    <span className="font-black text-white font-mono text-sm">{currentDriver.licenseNumber || 'Godkjent'}</span>
+                  </div>
+                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
+                    <span className="text-slate-400 block mb-1">Drivlinje</span>
+                    <span className="font-black text-[#34D186] text-sm">100% Elektrisk</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-4 flex justify-end">
-                <button
-                  onClick={async () => {
-                    await selectDriverVehicle(currentDriver.id, '');
-                    toast.info('Kjøretøy tilbakestilt. Velg bil på nytt.');
-                  }}
-                  className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 font-bold text-xs rounded-2xl cursor-pointer"
-                >
-                  Bytt Kjøretøy
-                </button>
+              {/* VEHICLE PICKER: EXACTLY 2 CARS */}
+              <div className="space-y-4">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
+                  Velg Kjøretøy for Vakten (2 Biler i Flåten)
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {vehicles.map((v) => {
+                    const isSelected = currentDriver.vehicleName === v.model || currentDriver.vehicleId === v.id;
+                    return (
+                      <div
+                        key={v.id}
+                        onClick={async () => {
+                          await selectDriverVehicle(currentDriver.id, v.id);
+                          toast.success(`Valgt: ${v.model}`);
+                        }}
+                        className={`p-5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between space-y-4 ${
+                          isSelected
+                            ? 'bg-[#182638] border-[#34D186] shadow-lg shadow-[#34D186]/10'
+                            : 'bg-[#111827] border-white/10 hover:border-white/30'
+                        }`}
+                      >
+                        <div className="space-y-2">
+                          <div className="h-32 rounded-xl overflow-hidden bg-black/40">
+                            <img src={v.imageUrls[0]} alt={v.model} className="w-full h-full object-cover" />
+                          </div>
+                          <div className="flex justify-between items-start pt-2">
+                            <h4 className="font-bold text-white text-base">{v.model}</h4>
+                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-white/10 text-slate-300">
+                              {v.fuelType}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 font-light">
+                            {v.seats} seter · {v.rangeKm} km rekkevidde
+                          </p>
+                        </div>
+
+                        <button
+                          className={`w-full py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${
+                            isSelected
+                              ? 'bg-[#34D186] text-slate-950'
+                              : 'bg-white/10 text-white hover:bg-white/20'
+                          }`}
+                        >
+                          {isSelected ? '✓ Valgt som aktiv bil' : 'Velg denne bilen'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -1344,12 +1385,12 @@ export const DriverDashboardPage: React.FC = () => {
                 <span className="font-mono text-white">{currentDriver.id}</span>
               </div>
               <div className="flex justify-between py-2 border-b border-white/5">
-                <span className="text-slate-400">Løyvenummer:</span>
-                <span className="font-mono font-bold text-[#34D186]">{currentDriver.permitNumber || 'OS 10597'}</span>
+                <span className="text-slate-400">Drosjeløyve:</span>
+                <span className="font-mono font-bold text-[#34D186]">{currentDriver.permitNumber || 'Registrert Løyve'}</span>
               </div>
               <div className="flex justify-between py-2 border-b border-white/5">
                 <span className="text-slate-400">Kjøreseddel Gyldighet:</span>
-                <span className="font-bold text-emerald-400">Gyldig til 2028 (Godkjent)</span>
+                <span className="font-bold text-emerald-400">Godkjent Drosjesjåfør</span>
               </div>
             </div>
           </div>

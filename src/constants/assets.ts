@@ -1,17 +1,25 @@
 import { Vehicle, Driver, PricingConfig } from '../types';
+import eqeFront from '../assets/images/real_mercedes_eqe_front_1786900915150.jpg';
+import eqeSide from '../assets/images/real_mercedes_eqe_side_1786900927080.jpg';
+import eqeInterior from '../assets/images/real_mercedes_eqe_interior_1786900938158.jpg';
+import eqeRear from '../assets/images/real_mercedes_eqe_rear_1786900951388.jpg';
+
+export const TESLA_MODEL_Y_IMAGES = [
+  'https://cdn.shopify.com/s/files/1/0749/4212/0071/files/WhatsApp_Image_2026-08-05_at_22.57.55_2.jpg?v=1786652864',
+  'https://cdn.shopify.com/s/files/1/0749/4212/0071/files/WhatsApp_Image_2026-08-05_at_22.57.55.jpg?v=1786652863'
+];
+
+export const MERCEDES_EQE_IMAGES = [
+  eqeFront,
+  eqeSide,
+  eqeInterior,
+  eqeRear
+];
 
 export const OFFICIAL_ASSETS = {
   logo: 'https://cdn.shopify.com/s/files/1/0749/4212/0071/files/ChatGPT_Image_25._juli_2026_22_28_14.png?v=1785534957',
-  teslaCars: [
-    'https://cdn.shopify.com/s/files/1/0749/4212/0071/files/WhatsApp_Image_2026-05-04_at_21.19.32.jpg?v=1786652897',
-    'https://cdn.shopify.com/s/files/1/0749/4212/0071/files/WhatsApp_Image_2026-05-04_at_21.19.33.jpg?v=1786652898',
-    'https://cdn.shopify.com/s/files/1/0749/4212/0071/files/WhatsApp_Image_2026-05-04_at_21.19.33_1_1.jpg?v=1786652897'
-  ],
-  mercedesCars: [
-    'https://cdn.shopify.com/s/files/1/0749/4212/0071/files/WhatsApp_Image_2026-08-05_at_22.57.55_2.jpg?v=1786652864',
-    'https://cdn.shopify.com/s/files/1/0749/4212/0071/files/WhatsApp_Image_2026-08-05_at_22.57.55_1.jpg?v=1786652863',
-    'https://cdn.shopify.com/s/files/1/0749/4212/0071/files/WhatsApp_Image_2026-08-05_at_22.57.55.jpg?v=1786652863'
-  ],
+  teslaCars: TESLA_MODEL_Y_IMAGES,
+  mercedesCars: MERCEDES_EQE_IMAGES,
   company: {
     name: 'Aron Taxi Norway',
     tagline: 'Oslo',
@@ -34,52 +42,49 @@ export const INITIAL_PRICING: PricingConfig = {
 export const INITIAL_VEHICLES: Vehicle[] = [
   {
     id: 'v1',
-    model: 'Tesla Model Y',
-    licensePlate: 'EP 17891',
-    permitNumber: 'OS 10597',
-    year: 2026,
-    color: 'Svart',
+    model: 'Tesla Model Y Juniper',
+    licensePlate: '',
+    permitNumber: '',
+    year: 2025,
+    color: 'Midnatt Svart',
     fuelType: 'Elektrisk',
     status: 'active',
     assignedDriverId: undefined,
     assignedDriverName: undefined,
-    imageUrls: OFFICIAL_ASSETS.teslaCars,
+    imageUrls: TESLA_MODEL_Y_IMAGES,
     seats: 4,
-    rangeKm: 533,
+    rangeKm: 565,
     features: [
-      '100% Elektrisk drivlinje',
-      'Løyvenummer: OS 10597',
-      'Bilnummer: EP 17891',
-      'Stille og eksklusiv kupé',
-      'Panorama glasstak',
-      'Premium skinnseter',
-      'Trådløs hurtiglading',
-      'Romslig bagasjerom'
+      '100% Elektrisk Tesla Model Y Juniper',
+      'Panoramatak i helglass',
+      'Romslig bagasjeplass og sittekomfort',
+      'Stillegående og utslippsfri kjøring',
+      'Topp moderne sikkerhets- og navigasjonsteknologi',
+      'Førsteklasses privatsjåføropplevelse i Oslo'
     ]
   },
   {
     id: 'v2',
-    model: 'Mercedes EQE',
-    licensePlate: 'EF 79664',
-    permitNumber: 'OS 13937',
+    model: 'Mercedes-Benz EQE Sedan',
+    licensePlate: '',
+    permitNumber: '',
     year: 2025,
-    color: 'Svart',
+    color: 'Obsidian Svart',
     fuelType: 'Elektrisk',
     status: 'active',
     assignedDriverId: undefined,
     assignedDriverName: undefined,
-    imageUrls: OFFICIAL_ASSETS.mercedesCars,
+    imageUrls: MERCEDES_EQE_IMAGES,
     seats: 4,
     rangeKm: 618,
     features: [
-      '100% Elektrisk luksus sedan',
-      'Løyvenummer: OS 13937',
-      'Bilnummer: EF 79664',
+      '100% Elektrisk Mercedes-Benz EQE luksussedan',
       'Airmatic adaptiv luftfjæring',
-      'Burmester 3D Surround lyd',
-      'Nappa skinn og ambient lys',
-      'Akustikkglass (støydemping)',
-      'Førsteklasses komfort'
+      'Burmester 3D Surround lydanlegg',
+      'MBUX Digital Widescreen',
+      'Perforert skinninteriør med ambient belysning',
+      'Akustikkglass med maksimal støydemping',
+      'Førsteklasses VIP- og direktørkomfort'
     ]
   }
 ];
@@ -87,15 +92,15 @@ export const INITIAL_VEHICLES: Vehicle[] = [
 export const INITIAL_DRIVERS: Driver[] = [
   {
     id: 'd1',
-    name: 'Aron (Sjåfør 1)',
+    name: 'Aron',
     email: 'sjafor1@arontaxi.no',
     phone: '+47 96 99 09 01',
-    licenseNumber: 'OS 10597',
-    permitNumber: 'OS 10597',
+    licenseNumber: '',
+    permitNumber: '',
     assignedVehicles: ['v1', 'v2'],
-    vehicleId: undefined,
-    vehicleName: undefined,
-    vehiclePlate: undefined,
+    vehicleId: 'v1',
+    vehicleName: 'Tesla Model Y Juniper',
+    vehiclePlate: '',
     isOnline: false,
     currentLocation: { lat: 59.9139, lng: 10.7522 },
     todayEarnings: 0,
@@ -107,28 +112,6 @@ export const INITIAL_DRIVERS: Driver[] = [
     tips: 0,
     todayDistanceKm: 0,
     todayOnlineSeconds: 0
-  },
-  {
-    id: 'd2',
-    name: 'Tariq (Sjåfør 2)',
-    email: 'sjafor2@arontaxi.no',
-    phone: '+47 96 99 09 01',
-    licenseNumber: 'OS 13937',
-    permitNumber: 'OS 13937',
-    assignedVehicles: ['v1', 'v2'],
-    vehicleId: undefined,
-    vehicleName: undefined,
-    vehiclePlate: undefined,
-    isOnline: false,
-    currentLocation: { lat: 59.9200, lng: 10.7400 },
-    todayEarnings: 0,
-    weekEarnings: 0,
-    monthEarnings: 0,
-    totalTrips: 0,
-    rating: 0,
-    ratingCount: 0,
-    tips: 0,
-    todayDistanceKm: 0,
-    todayOnlineSeconds: 0
   }
 ];
+
