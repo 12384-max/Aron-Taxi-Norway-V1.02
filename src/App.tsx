@@ -12,6 +12,7 @@ import { OrderPage } from './pages/OrderPage';
 import { HowItWorksPage } from './pages/HowItWorksPage';
 import { VehiclesPage } from './pages/VehiclesPage';
 import { ForDriversPage } from './pages/ForDriversPage';
+import { DriverRegistrationPage } from './pages/DriverRegistrationPage';
 import { LoginPage } from './pages/LoginPage';
 import { CustomerAccountPage } from './pages/CustomerAccountPage';
 import { DriverLoginPage } from './pages/DriverLoginPage';
@@ -48,6 +49,9 @@ export function App() {
               <Route path="/slik-fungerer-det" element={<HowItWorksPage />} />
               <Route path="/biler" element={<VehiclesPage />} />
               <Route path="/for-sjaforer" element={<ForDriversPage />} />
+              <Route path="/bli-sjafor" element={<DriverRegistrationPage />} />
+              <Route path="/driver/register" element={<DriverRegistrationPage />} />
+              <Route path="/for-sjaforer/sok" element={<DriverRegistrationPage />} />
               
               {/* AUTH PAGES */}
               <Route path="/login" element={<LoginPage />} />

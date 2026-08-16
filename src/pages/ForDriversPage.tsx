@@ -23,25 +23,25 @@ export const ForDriversPage: React.FC = () => {
             Ta kontakt med Aron Taxi Norway dersom du ønsker å kjøre for oss. Vi tilbyr et moderne, rettferdig og profesjonelt taxisystem i Oslo.
           </p>
 
-          {/* CONTACT BUTTONS (RING OSS & SEND E-POST) + DRIVER LOGIN */}
+          {/* CONTACT & REGISTRATION BUTTONS */}
           <div className="pt-4 flex flex-wrap justify-center items-center gap-4">
+            <Link
+              to="/bli-sjafor"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] hover:brightness-110 text-slate-950 font-black uppercase text-xs tracking-wider rounded-full shadow-xl shadow-[#D4AF37]/30 transition-all hover:scale-105"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              SØK OM Å BLI SJÅFØR NÅ
+            </Link>
             <a
               href="tel:+4796990901"
-              className="inline-flex items-center gap-2 px-7 py-3.5 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] hover:brightness-110 text-slate-950 font-extrabold uppercase text-xs tracking-wider rounded-full shadow-lg shadow-[#D4AF37]/25 transition-all"
+              className="inline-flex items-center gap-2 px-6 py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold uppercase text-xs tracking-wider rounded-full transition-all"
             >
-              <Phone className="w-4 h-4" />
+              <Phone className="w-4 h-4 text-[#D4AF37]" />
               RING OSS (+47 96 99 09 01)
-            </a>
-            <a
-              href="mailto:aron.taxi@hotmail.com"
-              className="inline-flex items-center gap-2 px-7 py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#D4AF37]/50 text-[#F5F2ED] font-bold uppercase text-xs tracking-wider rounded-full transition-all"
-            >
-              <Mail className="w-4 h-4 text-[#D4AF37]" />
-              SEND E-POST (aron.taxi@hotmail.com)
             </a>
             <Link
               to="/driver/login"
-              className="inline-flex items-center gap-2 px-7 py-3.5 bg-[#121722] hover:bg-[#182030] border border-[#D4AF37]/40 text-[#D4AF37] font-bold uppercase text-xs tracking-wider rounded-full transition-all"
+              className="inline-flex items-center gap-2 px-6 py-3.5 bg-[#121722] hover:bg-[#182030] border border-[#D4AF37]/40 text-[#D4AF37] font-bold uppercase text-xs tracking-wider rounded-full transition-all"
             >
               <LogIn className="w-4 h-4" />
               Sjåfør Logg inn
@@ -127,20 +127,27 @@ export const ForDriversPage: React.FC = () => {
         </div>
 
         {/* ONBOARDING INFO */}
-        <div className="bg-[#121722]/90 border border-white/10 rounded-3xl p-8 sm:p-12 text-center max-w-2xl mx-auto space-y-5 shadow-2xl backdrop-blur-xl">
+        <div className="bg-[#121722]/90 border border-[#D4AF37]/30 rounded-3xl p-8 sm:p-12 text-center max-w-2xl mx-auto space-y-5 shadow-2xl backdrop-blur-xl">
           <ShieldCheck className="w-12 h-12 text-[#D4AF37] mx-auto" />
           <h2 className="font-display text-2xl font-bold text-[#F5F2ED]">
-            Sjåførkonto opprettes av administrator
+            Søk digitalt · Godkjennes av administrasjonen
           </h2>
-          <p className="text-xs sm:text-sm text-slate-400 font-light leading-relaxed">
-            For å ivareta våre strenge kvalitetskrav til drosjeløyver, sjåførattester og forsikring, opprettes sjåførkontoer direkte av Aron Taxi administrasjon. Ta kontakt med oss i dag for en uforpliktende samtale.
+          <p className="text-xs sm:text-sm text-slate-300 font-light leading-relaxed">
+            Fyll inn all nødvendig informasjon om førerkort, drosjeløyve, kjøreseddel og biloppsett. Når du har sendt inn søknaden, vil Aron Taxi ledelse gjennomgå opplysningene og aktivere sjåførkontoen din.
           </p>
-          <div className="pt-2 flex justify-center gap-4">
+          <div className="pt-2 flex flex-wrap justify-center gap-4">
+            <Link
+              to="/bli-sjafor"
+              className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] hover:brightness-110 text-slate-950 font-black uppercase text-xs tracking-wider rounded-full transition-all shadow-md shadow-[#D4AF37]/20"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              Gå til Søknadsskjema
+            </Link>
             <a
               href="tel:+4796990901"
-              className="inline-flex items-center gap-2 px-8 py-3.5 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] hover:brightness-110 text-slate-950 font-extrabold uppercase text-xs tracking-wider rounded-full transition-all shadow-md shadow-[#D4AF37]/20"
+              className="inline-flex items-center gap-2 px-6 py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold uppercase text-xs tracking-wider rounded-full transition-all"
             >
-              <Phone className="w-4 h-4" />
+              <Phone className="w-4 h-4 text-[#D4AF37]" />
               Ring +47 96 99 09 01
             </a>
           </div>

@@ -58,8 +58,11 @@
         "startFee": { "type": "number" },
         "commissionAron": { "type": "number" },
         "driverPayout": { "type": "number" },
-        "paymentMethod": { "type": "string", "enum": ["vipps", "card", "apple_pay", "cash", "invoice"] },
-        "paymentStatus": { "type": "string", "enum": ["pending", "completed"] },
+        "paymentMethod": { "type": "string", "enum": ["vipps", "card", "apple_pay", "cash", "invoice", "stripe"] },
+        "paymentStatus": { "type": "string", "enum": ["pending", "completed", "pending_payment", "paid", "payment_failed", "cancelled"] },
+        "stripeSessionId": { "type": "string", "maxLength": 256 },
+        "paymentIntentId": { "type": "string", "maxLength": 256 },
+        "paidAt": { "type": "string", "maxLength": 64 },
         "driverId": { "type": "string", "maxLength": 128 },
         "driverName": { "type": "string", "maxLength": 128 },
         "driverPhone": { "type": "string", "maxLength": 32 },
@@ -117,6 +120,24 @@
         "date": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "driverId", "category", "amount", "date"]
+    },
+    "DriverApplication": {
+      "title": "DriverApplication",
+      "description": "New driver registration application pending admin review and approval",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 256 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "licenseNumber": { "type": "string", "maxLength": 64 },
+        "permitNumber": { "type": "string", "maxLength": 64 },
+        "driverCardNumber": { "type": "string", "maxLength": 64 },
+        "hasOwnVehicle": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected", "under_review"] },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "name", "email", "phone", "licenseNumber", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -135,6 +156,10 @@
     "/drivers/{driverId}": {
       "schema": "Driver",
       "description": "Fleet drivers and availability"
+    },
+    "/driver_applications/{applicationId}": {
+      "schema": "DriverApplication",
+      "description": "Submitted driver registration applications waiting for admin approval"
     },
     "/pricing/{configId}": {
       "schema": "PricingConfig",

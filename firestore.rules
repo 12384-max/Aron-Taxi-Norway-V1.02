@@ -24,6 +24,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /driver_applications/{appId} {
+      allow read, write: if true;
+    }
+
     match /pricing/{configId} {
       allow read, write: if true;
     }

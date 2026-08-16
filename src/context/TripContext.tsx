@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Trip, TripStatus, Driver, Vehicle, PricingConfig, DriverExpense, UserProfile, EmergencyAlert } from '../types';
+import { Trip, TripStatus, Driver, Vehicle, PricingConfig, DriverExpense, UserProfile, EmergencyAlert, DriverApplication } from '../types';
 import { INITIAL_DRIVERS, INITIAL_VEHICLES, INITIAL_PRICING } from '../constants/assets';
 import { db } from '../services/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, runTransaction, getDoc } from 'firebase/firestore';
@@ -13,6 +13,7 @@ const INITIAL_CUSTOMERS: UserProfile[] = [];
 interface TripContextType {
   trips: Trip[];
   drivers: Driver[];
+  driverApplications: DriverApplication[];
   vehicles: Vehicle[];
   customers: UserProfile[];
   pricing: PricingConfig;
@@ -35,6 +36,12 @@ interface TripContextType {
   // Emergency & Dispatch
   triggerEmergencyAlert: (driverId: string, customNotes?: string) => Promise<EmergencyAlert>;
   resolveEmergencyAlert: (alertId: string, resolvedBy?: string) => Promise<void>;
+  
+  // Driver Applications & Approval
+  submitDriverApplication: (appData: Omit<DriverApplication, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => Promise<DriverApplication>;
+  approveDriverApplication: (applicationId: string, options?: { vehicleId?: string; permitNumber?: string; adminNotes?: string }) => Promise<void>;
+  rejectDriverApplication: (applicationId: string, reason?: string) => Promise<void>;
+  deleteDriverApplication: (applicationId: string) => Promise<void>;
   
   // Driver Management
   addDriver: (driverData: Omit<Driver, 'id' | 'todayEarnings' | 'weekEarnings' | 'monthEarnings' | 'totalTrips' | 'rating'> & { password?: string }) => Promise<Driver>;
@@ -113,6 +120,11 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [driverApplications, setDriverApplications] = useState<DriverApplication[]>(() => {
+    const saved = localStorage.getItem('aron_driver_applications');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   // Sync to localStorage and broadcast channel for multi-tab live sync
   const saveTrips = (newTrips: Trip[]) => {
     setTrips(newTrips);
@@ -124,6 +136,12 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setDrivers(newDrivers);
     localStorage.setItem('aron_drivers', JSON.stringify(newDrivers));
     window.dispatchEvent(new Event('aron_drivers_updated'));
+  };
+
+  const saveDriverApplications = (newApps: DriverApplication[]) => {
+    setDriverApplications(newApps);
+    localStorage.setItem('aron_driver_applications', JSON.stringify(newApps));
+    window.dispatchEvent(new Event('aron_driver_apps_updated'));
   };
 
   const saveVehicles = (newVehicles: Vehicle[]) => {
@@ -153,6 +171,9 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const savedDrivers = localStorage.getItem('aron_drivers');
       if (savedDrivers) setDrivers(JSON.parse(savedDrivers));
 
+      const savedApps = localStorage.getItem('aron_driver_applications');
+      if (savedApps) setDriverApplications(JSON.parse(savedApps));
+
       const savedVehicles = localStorage.getItem('aron_vehicles');
       if (savedVehicles) setVehicles(JSON.parse(savedVehicles));
 
@@ -165,6 +186,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     window.addEventListener('aron_trips_updated', handleSync);
     window.addEventListener('aron_drivers_updated', handleSync);
+    window.addEventListener('aron_driver_apps_updated', handleSync);
     window.addEventListener('aron_vehicles_updated', handleSync);
     window.addEventListener('aron_customers_updated', handleSync);
     window.addEventListener('aron_emergency_updated', handleSync);
@@ -246,14 +268,24 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         localStorage.setItem('aron_emergency_alerts', JSON.stringify(fsAlerts));
       }, (err) => console.log('Firestore emergency alert listener note:', err.message));
 
+      const driverAppsUnsub = onSnapshot(collection(db, 'driver_applications'), (snapshot) => {
+        const fsApps: DriverApplication[] = [];
+        snapshot.forEach((d) => fsApps.push(d.data() as DriverApplication));
+        fsApps.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setDriverApplications(fsApps);
+        localStorage.setItem('aron_driver_applications', JSON.stringify(fsApps));
+      }, (err) => console.log('Firestore driver applications listener note:', err.message));
+
       return () => {
         tripsUnsub();
         driversUnsub();
         vehiclesUnsub();
         usersUnsub();
         alertsUnsub();
+        driverAppsUnsub();
         window.removeEventListener('aron_trips_updated', handleSync);
         window.removeEventListener('aron_drivers_updated', handleSync);
+        window.removeEventListener('aron_driver_apps_updated', handleSync);
         window.removeEventListener('aron_vehicles_updated', handleSync);
         window.removeEventListener('aron_customers_updated', handleSync);
         window.removeEventListener('aron_emergency_updated', handleSync);
@@ -847,6 +879,168 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (e) {}
   };
 
+  // DRIVER APPLICATION & APPROVAL WORKFLOW
+  const submitDriverApplication = async (appData: Omit<DriverApplication, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Promise<DriverApplication> => {
+    const id = `app_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+    const now = new Date().toISOString();
+
+    const newApplication: DriverApplication = {
+      ...appData,
+      id,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const updated = [newApplication, ...driverApplications];
+    saveDriverApplications(updated);
+
+    // Notify Admin via Push / In-app notification
+    notificationService.notify({
+      title: '📄 Ny sjåførsøknad mottatt',
+      message: `${newApplication.name} (${newApplication.phone}) har sendt inn søknad om å bli sjåfør i Oslo. Løyvenr: ${newApplication.permitNumber || 'Ikke oppgitt'}.`,
+      type: 'trip_created',
+      targetRole: 'admin',
+      actionUrl: '/admin',
+      soundType: 'request'
+    });
+
+    try {
+      await setDoc(doc(db, 'driver_applications', id), removeUndefinedFields(newApplication), { merge: true });
+      console.log('✅ Ny sjåførsøknad lagret i Firestore:', id);
+    } catch (e: any) {
+      console.error('❌ Feil ved lagring av sjåførsøknad i Firestore:', e?.message || e);
+    }
+
+    return newApplication;
+  };
+
+  const approveDriverApplication = async (applicationId: string, options?: { vehicleId?: string; permitNumber?: string; adminNotes?: string }) => {
+    const targetApp = driverApplications.find(a => a.id === applicationId);
+    if (!targetApp) return;
+
+    const now = new Date().toISOString();
+    const updatedApp: DriverApplication = {
+      ...targetApp,
+      status: 'approved',
+      adminNotes: options?.adminNotes || targetApp.adminNotes,
+      reviewedBy: 'Aron Taxi Admin',
+      reviewedAt: now,
+      updatedAt: now,
+    };
+
+    // Update applications state
+    const updatedApps = driverApplications.map(a => a.id === applicationId ? updatedApp : a);
+    saveDriverApplications(updatedApps);
+
+    // Assign vehicle if selected
+    const chosenVehicleId = options?.vehicleId || (targetApp.hasOwnVehicle ? undefined : 'v1');
+    const assignedVehicle = vehicles.find(v => v.id === chosenVehicleId);
+
+    // Create or activate Driver profile
+    const driverId = `d_${Date.now().toString().slice(-4)}`;
+    const driverName = targetApp.name;
+    const driverPhone = targetApp.phone;
+    const driverEmail = targetApp.email;
+    const permitNumber = options?.permitNumber || targetApp.permitNumber || 'OS 10597';
+
+    const newDriver: Driver = {
+      id: driverId,
+      name: driverName,
+      email: driverEmail,
+      phone: driverPhone,
+      password: targetApp.password || 'aron1234',
+      licenseNumber: targetApp.licenseNumber || 'NO-99999999',
+      permitNumber: permitNumber,
+      driverCardNumber: targetApp.driverCardNumber || undefined,
+      vehicleId: chosenVehicleId || undefined,
+      vehicleName: assignedVehicle?.model || targetApp.vehicleModel || (targetApp.hasOwnVehicle ? 'Egen Drosje' : 'Tesla Model Y Juniper'),
+      vehiclePlate: assignedVehicle?.licensePlate || targetApp.vehiclePlate || (targetApp.hasOwnVehicle ? 'EL 99999' : 'EP 17891'),
+      assignedVehicles: chosenVehicleId ? [chosenVehicleId] : ['v1', 'v2'],
+      isOnline: false,
+      todayEarnings: 0,
+      weekEarnings: 0,
+      monthEarnings: 0,
+      totalTrips: 0,
+      rating: 5.0,
+      documentsVerified: true,
+      status: 'active',
+      applicationId: applicationId,
+    };
+
+    // Save driver to state and cloud
+    const updatedDrivers = [...drivers.filter(d => d.email.toLowerCase() !== driverEmail.toLowerCase()), newDriver];
+    saveDrivers(updatedDrivers);
+
+    // Register UserProfile
+    const userDoc: UserProfile = {
+      uid: driverId,
+      email: driverEmail,
+      name: driverName,
+      phone: driverPhone,
+      role: 'driver',
+      password: newDriver.password,
+      createdAt: now,
+    };
+
+    // If vehicle chosen, update vehicle
+    if (chosenVehicleId && assignedVehicle) {
+      const updatedVehicles = vehicles.map(v => v.id === chosenVehicleId ? {
+        ...v,
+        assignedDriverId: driverId,
+        assignedDriverName: driverName,
+      } : v);
+      saveVehicles(updatedVehicles);
+      try {
+        await setDoc(doc(db, 'vehicles', chosenVehicleId), removeUndefinedFields({ assignedDriverId: driverId, assignedDriverName: driverName }), { merge: true });
+      } catch (e) {}
+    }
+
+    try {
+      await setDoc(doc(db, 'driver_applications', applicationId), removeUndefinedFields(updatedApp), { merge: true });
+      await setDoc(doc(db, 'drivers', driverId), removeUndefinedFields(newDriver), { merge: true });
+      await setDoc(doc(db, 'users', driverId), removeUndefinedFields(userDoc), { merge: true });
+      console.log('✅ Sjåfør godkjent og aktivert:', driverName, driverEmail);
+    } catch (e: any) {
+      console.error('Feil ved godkjenning av sjåfør:', e?.message || e);
+    }
+  };
+
+  const rejectDriverApplication = async (applicationId: string, reason?: string) => {
+    const targetApp = driverApplications.find(a => a.id === applicationId);
+    if (!targetApp) return;
+
+    const now = new Date().toISOString();
+    const updatedApp: DriverApplication = {
+      ...targetApp,
+      status: 'rejected',
+      adminNotes: reason || 'Søknaden oppfyller dessverre ikke våre nåværende krav.',
+      reviewedBy: 'Aron Taxi Admin',
+      reviewedAt: now,
+      updatedAt: now,
+    };
+
+    const updatedApps = driverApplications.map(a => a.id === applicationId ? updatedApp : a);
+    saveDriverApplications(updatedApps);
+
+    try {
+      await setDoc(doc(db, 'driver_applications', applicationId), removeUndefinedFields(updatedApp), { merge: true });
+    } catch (e: any) {
+      console.error('Feil ved avslag av sjåførsøknad:', e?.message || e);
+    }
+  };
+
+  const deleteDriverApplication = async (applicationId: string) => {
+    const updated = driverApplications.filter(a => a.id !== applicationId);
+    saveDriverApplications(updated);
+
+    try {
+      await deleteDoc(doc(db, 'driver_applications', applicationId));
+    } catch (e: any) {
+      console.error('Feil ved sletting av sjåførsøknad:', e?.message || e);
+    }
+  };
+
   // DRIVER MANAGEMENT
   const addDriver = async (driverData: Omit<Driver, 'id' | 'todayEarnings' | 'weekEarnings' | 'monthEarnings' | 'totalTrips' | 'rating'> & { password?: string }): Promise<Driver> => {
     const id = `d_${Date.now().toString().slice(-4)}`;
@@ -1201,6 +1395,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       value={{
         trips,
         drivers,
+        driverApplications,
         vehicles,
         customers,
         pricing,
@@ -1220,6 +1415,10 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         addExpense,
         triggerEmergencyAlert,
         resolveEmergencyAlert,
+        submitDriverApplication,
+        approveDriverApplication,
+        rejectDriverApplication,
+        deleteDriverApplication,
         addDriver,
         updateDriver,
         deleteDriver,

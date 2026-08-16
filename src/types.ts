@@ -76,8 +76,12 @@ export interface Trip {
   tipAmount?: number;
   commissionAron: number; // 15%
   driverPayout: number;    // 85%
-  paymentMethod: 'vipps' | 'card' | 'apple_pay' | 'cash' | 'invoice';
-  paymentStatus: 'pending' | 'completed';
+  paymentMethod: 'vipps' | 'card' | 'apple_pay' | 'cash' | 'invoice' | 'stripe';
+  paymentStatus: 'pending' | 'completed' | 'pending_payment' | 'paid' | 'payment_failed' | 'cancelled';
+  stripeSessionId?: string;
+  paymentIntentId?: string;
+  paidAt?: string;
+  receiptUrl?: string;
   
   // Luxury & Vehicle Tier
   vehicleCategory?: 'vip_black' | 'comfort_eco' | 'airport_vip';
@@ -141,6 +145,7 @@ export interface Driver {
   pinCode?: string;
   licenseNumber: string;
   permitNumber?: string;
+  driverCardNumber?: string;
   assignedVehicles?: string[]; // IDs of vehicles authorized for this driver (e.g. ['v1', 'v2'])
   vehicleId?: string;
   vehicleName?: string;
@@ -158,6 +163,41 @@ export interface Driver {
   todayOnlineSeconds?: number;
   insuranceNotes?: string;
   documentsVerified?: boolean;
+  status?: 'active' | 'pending_approval' | 'suspended' | 'rejected';
+  applicationId?: string;
+}
+
+export type DriverApplicationStatus = 'pending' | 'approved' | 'rejected' | 'under_review';
+
+export interface DriverApplication {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  password?: string;
+  birthDate?: string;
+  address?: string;
+  postalCode?: string;
+  city?: string;
+  licenseNumber: string; // Førerkortnummer (Klasse B)
+  licenseExpiryDate?: string;
+  permitNumber?: string; // Drosjeløyvenummer
+  driverCardNumber?: string; // Kjøreseddelnummer
+  driverCardExpiryDate?: string;
+  experienceYears?: number | string; // Erfaring
+  hasOwnVehicle: boolean;
+  vehicleModel?: string;
+  vehiclePlate?: string;
+  vehicleYear?: number;
+  languages?: string[];
+  backgroundCheckClean: boolean; // Bekreftet plettfri vandel
+  notes?: string;
+  status: DriverApplicationStatus;
+  adminNotes?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Vehicle {

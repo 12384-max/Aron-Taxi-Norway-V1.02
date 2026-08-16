@@ -113,17 +113,27 @@ export const DriverLoginPage: React.FC = () => {
             </button>
           </form>
 
-          {/* ADMIN APPROVAL INFO NOTICE */}
-          <div className="p-4 bg-[#0D121D] rounded-2xl border border-white/5 space-y-2 text-[11px] text-slate-400">
-            <div className="flex items-center gap-2 text-[#D4AF37] font-bold">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Lukket sjåførsystem</span>
+          {/* ADMIN APPROVAL INFO & REGISTRATION NOTICE */}
+          <div className="p-4 bg-[#0D121D] rounded-2xl border border-[#D4AF37]/20 space-y-2.5 text-[11px] text-slate-400">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[#D4AF37] font-bold">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Godkjent sjåfør?</span>
+              </div>
+              <Link
+                to="/bli-sjafor"
+                className="text-[#D4AF37] font-black uppercase text-[10px] tracking-wider hover:underline flex items-center gap-1"
+              >
+                Søk om konto <ArrowRight className="w-3 h-3" />
+              </Link>
             </div>
             <p className="leading-relaxed font-light">
-              Nye sjåfører må være forhåndsgodkjent og registrert av Aron Taxi administrasjon før tilgang gis.
+              Nye sjåfører må sende inn søknad med førerkort og drosjeløyve for godkjenning av Aron Taxi administrasjon før tilgang gis.
             </p>
-            <div className="pt-1 flex items-center justify-between border-t border-white/5 text-[10px]">
-              <span>Trenger du tilgang?</span>
+            <div className="pt-2 flex items-center justify-between border-t border-white/5 text-[10px]">
+              <Link to="/bli-sjafor" className="text-white font-bold hover:text-[#D4AF37] transition-colors">
+                📝 Send inn sjåførsøknad
+              </Link>
               <a href="tel:+4796990901" className="text-[#D4AF37] font-semibold hover:underline flex items-center gap-1">
                 <Phone className="w-3 h-3" />
                 +47 96 99 09 01

@@ -78,7 +78,8 @@ import { AdminInvoicesTab } from '../components/admin/AdminInvoicesTab';
 import { AdminCouponsTab } from '../components/admin/AdminCouponsTab';
 import { AdminNotificationsTab } from '../components/admin/AdminNotificationsTab';
 import { AdminReportsTab } from '../components/admin/AdminReportsTab';
-import { Invoice, Coupon, BroadcastNotification, SurgeZone, CorporatePartner } from '../types';
+import { AdminApplicationsTab } from '../components/admin/AdminApplicationsTab';
+import { Invoice, Coupon, BroadcastNotification, SurgeZone, CorporatePartner, DriverApplication } from '../types';
 
 export const AdminDashboardPage: React.FC = () => {
   const { 
@@ -103,7 +104,11 @@ export const AdminDashboardPage: React.FC = () => {
     updateCustomer,
     deleteCustomer,
     emergencyAlerts,
-    resolveEmergencyAlert
+    resolveEmergencyAlert,
+    driverApplications,
+    approveDriverApplication,
+    rejectDriverApplication,
+    deleteDriverApplication
   } = useTrips();
 
   const { user, logout, resetPassword } = useAuth();
@@ -111,7 +116,7 @@ export const AdminDashboardPage: React.FC = () => {
 
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'trips' | 'invoices' | 'drivers' | 'customers' | 'vehicles' | 'surge' | 'partners' | 'coupons' | 'reports' | 'notifications' | 'pricing'
+    'overview' | 'trips' | 'invoices' | 'drivers' | 'applications' | 'customers' | 'vehicles' | 'surge' | 'partners' | 'coupons' | 'reports' | 'notifications' | 'pricing'
   >('overview');
   const [overviewDateRange, setOverviewDateRange] = useState<'day' | 'week' | 'month' | 'total'>('month');
   const [tripFilter, setTripFilter] = useState<string>('all');
@@ -979,9 +984,9 @@ export const AdminDashboardPage: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              {activeEmergencyAlerts.map((alert) => (
+              {activeEmergencyAlerts.map((alert, alertIdx) => (
                 <div
-                  key={alert.id}
+                  key={`admin-alert-${alert.id || alertIdx}`}
                   className="bg-black/70 border border-rose-500/50 rounded-2xl p-4 space-y-3"
                 >
                   <div className="flex justify-between items-start">
@@ -1246,6 +1251,25 @@ export const AdminDashboardPage: React.FC = () => {
           >
             <Car className="w-3.5 h-3.5" />
             Sjåfører ({drivers.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('applications')}
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'applications'
+                ? 'bg-[#34D186] text-slate-950 font-black shadow-lg shadow-[#34D186]/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            Søknader ({driverApplications.length})
+            {driverApplications.filter((a) => a.status === 'pending').length > 0 && (
+              <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-black ${
+                activeTab === 'applications' ? 'bg-slate-950 text-[#34D186]' : 'bg-amber-500 text-slate-950 animate-pulse'
+              }`}>
+                {driverApplications.filter((a) => a.status === 'pending').length}
+              </span>
+            )}
           </button>
 
           <button
@@ -1581,8 +1605,8 @@ export const AdminDashboardPage: React.FC = () => {
                     )}
                   </div>
                 ) : (
-                  filteredTrips.map((t) => (
-                    <div key={t.id} className="p-5 bg-[#0D121D] rounded-2xl border border-white/10 space-y-3">
+                  filteredTrips.map((t, tripIdx) => (
+                    <div key={`admin-trip-row-${t.id || tripIdx}`} className="p-5 bg-[#0D121D] rounded-2xl border border-white/10 space-y-3">
                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-3 border-b border-white/10">
                         <div>
                           <div className="flex items-center gap-2">
@@ -1635,9 +1659,9 @@ export const AdminDashboardPage: React.FC = () => {
 
                         <div className="flex items-center gap-2">
                           <span className="text-slate-500 text-[10px]">Tildel sjåfør:</span>
-                          {drivers.map((d) => (
+                          {drivers.map((d, dIdx) => (
                             <button
-                              key={d.id}
+                              key={`admin-trip-assign-${t.id || tripIdx}-${d.id || dIdx}`}
                               onClick={() => assignDriverToTrip(t.id, d.id)}
                               className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${
                                 t.driverId === d.id
@@ -1694,8 +1718,8 @@ export const AdminDashboardPage: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {filteredDrivers.map((d) => (
-                <div key={d.id} className="bg-[#121722]/90 border border-white/10 rounded-3xl p-6 space-y-4 shadow-xl backdrop-blur-xl">
+              {filteredDrivers.map((d, dIdx) => (
+                <div key={`admin-driver-card-${d.id || dIdx}`} className="bg-[#121722]/90 border border-white/10 rounded-3xl p-6 space-y-4 shadow-xl backdrop-blur-xl">
                   <div className="flex items-center justify-between pb-3 border-b border-white/10">
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 rounded-2xl bg-[#D4AF37]/15 border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37] font-bold shrink-0">
@@ -1951,10 +1975,10 @@ export const AdminDashboardPage: React.FC = () => {
                           </td>
                         </tr>
                       ) : (
-                        filteredCustomers.map((c) => {
+                        filteredCustomers.map((c, cIdx) => {
                           const isRevealed = revealedCustomerPasswords[c.uid];
                           return (
-                            <tr key={c.uid} className="hover:bg-white/[0.02] transition-colors">
+                            <tr key={`admin-customer-table-row-${c.uid || cIdx}`} className="hover:bg-white/[0.02] transition-colors">
                               <td className="py-3.5 px-4 font-semibold text-white">
                                 <div className="flex items-center gap-2.5">
                                   <div className={`w-8 h-8 rounded-xl font-black flex items-center justify-center text-xs shrink-0 border ${
@@ -2091,10 +2115,10 @@ export const AdminDashboardPage: React.FC = () => {
                     Ingen kunder funnet med søkekriteriene.
                   </div>
                 ) : (
-                  filteredCustomers.map((c) => {
+                  filteredCustomers.map((c, cIdx) => {
                     const isRevealed = revealedCustomerPasswords[c.uid];
                     return (
-                      <div key={c.uid} className="bg-[#111827] border border-white/10 rounded-2xl p-5 space-y-4 shadow-xl hover:border-[#34D186]/40 transition-all flex flex-col justify-between">
+                      <div key={`admin-customer-card-${c.uid || cIdx}`} className="bg-[#111827] border border-white/10 rounded-2xl p-5 space-y-4 shadow-xl hover:border-[#34D186]/40 transition-all flex flex-col justify-between">
                         <div className="space-y-3">
                           {/* TOP CARD BAR */}
                           <div className="flex items-start justify-between gap-3">
@@ -2284,8 +2308,8 @@ export const AdminDashboardPage: React.FC = () => {
 
             {/* VEHICLE CARDS GRID */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {filteredVehicles.map((v) => (
-                <div key={v.id} className="bg-[#121722]/90 border border-white/10 rounded-3xl p-6 space-y-4 shadow-xl backdrop-blur-xl hover:border-[#D4AF37]/30 transition-all flex flex-col justify-between">
+              {filteredVehicles.map((v, vIdx) => (
+                <div key={`admin-vehicle-card-${v.id || vIdx}`} className="bg-[#121722]/90 border border-white/10 rounded-3xl p-6 space-y-4 shadow-xl backdrop-blur-xl hover:border-[#D4AF37]/30 transition-all flex flex-col justify-between">
                   <div className="space-y-4">
                     <div className="flex items-start justify-between gap-4 pb-3 border-b border-white/10">
                       <div>
@@ -2326,7 +2350,7 @@ export const AdminDashboardPage: React.FC = () => {
                         <div className="grid grid-cols-3 gap-2">
                           {v.imageUrls.map((img, i) => (
                             <div
-                              key={i}
+                              key={`admin-v-${v.id || vIdx}-thumb-${i}`}
                               onClick={() => setAdminLightboxImg({ url: img, title: `${v.model} (${v.licensePlate})` })}
                               className="h-20 rounded-xl overflow-hidden border border-white/10 hover:border-[#D4AF37] cursor-pointer relative group transition-all"
                             >
@@ -2393,6 +2417,18 @@ export const AdminDashboardPage: React.FC = () => {
             invoices={invoices}
             onCreateInvoice={handleCreateInvoice}
             onUpdateInvoiceStatus={handleUpdateInvoiceStatus}
+            showToast={showToast}
+          />
+        )}
+
+        {/* DRIVER APPLICATIONS & REGISTRATION TAB */}
+        {activeTab === 'applications' && (
+          <AdminApplicationsTab
+            applications={driverApplications}
+            vehicles={vehicles}
+            onApproveApplication={approveDriverApplication}
+            onRejectApplication={rejectDriverApplication}
+            onDeleteApplication={deleteDriverApplication}
             showToast={showToast}
           />
         )}

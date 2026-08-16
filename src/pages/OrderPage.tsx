@@ -9,8 +9,14 @@ import { useTrips } from '../context/TripContext';
 import { useAuth } from '../context/AuthContext';
 import { Trip, LocationPoint } from '../types';
 import { db } from '../services/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore';
 import { validateAndCalculateDiscount, getStoredCoupons } from '../services/couponService';
+import {
+  createStripeCheckoutSession,
+  verifyStripeSession,
+  checkStripeStatus,
+  StripeConfigStatus
+} from '../services/stripeClient';
 import {
   MapPin,
   Navigation,
@@ -45,7 +51,11 @@ import {
   ChevronUp,
   Gift,
   Shield,
-  Crown
+  Crown,
+  CreditCard,
+  Lock,
+  ExternalLink,
+  Receipt
 } from 'lucide-react';
 
 export type VehicleTier = 'vip_black' | 'comfort_eco' | 'airport_vip';
@@ -137,7 +147,19 @@ export const OrderPage: React.FC = () => {
   const [isPreorder, setIsPreorder] = useState<boolean>(false);
   const [scheduledTime, setScheduledTime] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
-  const [paymentMethod, setPaymentMethod] = useState<'vipps' | 'card' | 'apple_pay' | 'cash' | 'invoice'>('card');
+  const [paymentMethod, setPaymentMethod] = useState<'vipps' | 'card' | 'apple_pay' | 'cash' | 'invoice' | 'stripe'>('card');
+
+  // Stripe Payment & Verification State
+  const [verifyingPayment, setVerifyingPayment] = useState<boolean>(false);
+  const [stripeStatus, setStripeStatus] = useState<StripeConfigStatus | null>(null);
+  const [paymentBanner, setPaymentBanner] = useState<{
+    type: 'success' | 'cancelled' | 'error';
+    title: string;
+    message: string;
+    sessionId?: string;
+    paymentIntentId?: string;
+    amount?: number;
+  } | null>(null);
 
   // Luxury Vehicle Class Tier
   const [selectedTier, setSelectedTier] = useState<VehicleTier>('vip_black');
@@ -195,6 +217,68 @@ export const OrderPage: React.FC = () => {
   const [customTip, setCustomTip] = useState<string>('');
   const [reviewComment, setReviewComment] = useState<string>('');
   const [ratingSubmitted, setRatingSubmitted] = useState<boolean>(false);
+
+  // Check Stripe Configuration on backend
+  useEffect(() => {
+    checkStripeStatus().then(setStripeStatus).catch(() => {});
+  }, []);
+
+  // Handle Return from Stripe Checkout (success_url / cancel_url)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const sessionId = params.get('session_id');
+    const paymentStatusParam = params.get('payment_status');
+    const tripIdParam = params.get('trip_id');
+
+    if (paymentStatusParam === 'success' && sessionId) {
+      setVerifyingPayment(true);
+      verifyStripeSession(sessionId, tripIdParam || undefined).then(async (res) => {
+        setVerifyingPayment(false);
+        if (res.isPaid) {
+          setPaymentBanner({
+            type: 'success',
+            title: 'Stripe Betaling Bekreftet!',
+            message: `Takk for din bestilling. Beløpet på ${res.amountTotal || 'avtalt fastpris'} NOK er autorisert og kvittering er sendt til din e-post. Nærmeste ledige sjåfør sendes nå.`,
+            sessionId: sessionId,
+            paymentIntentId: res.paymentIntentId,
+            amount: res.amountTotal
+          });
+          toast.success('✅ Betaling bekreftet via Stripe Checkout!');
+          
+          if (tripIdParam) {
+            const found = trips.find(t => t.id === tripIdParam || t.tripId === tripIdParam);
+            if (found) {
+              setBookedTrip({ ...found, paymentStatus: 'paid', stripeSessionId: sessionId, paymentIntentId: res.paymentIntentId });
+            } else {
+              try {
+                const snap = await getDoc(doc(db, 'trips', tripIdParam));
+                if (snap.exists()) {
+                  setBookedTrip(snap.data() as Trip);
+                }
+              } catch (e) {}
+            }
+          }
+        } else {
+          setPaymentBanner({
+            type: 'error',
+            title: 'Betalingsstatus Venter',
+            message: res.message || 'Betalingen behandles eller venter på endelig godkjenning fra banken.',
+            sessionId
+          });
+        }
+      }).catch((err) => {
+        setVerifyingPayment(false);
+        console.error(err);
+      });
+    } else if (paymentStatusParam === 'cancelled') {
+      setPaymentBanner({
+        type: 'cancelled',
+        title: 'Stripe Betaling Ble Avbrutt',
+        message: 'Betalingsøkten ble avbrutt. Ingen penger er trukket fra kortet ditt. Du kan fullføre bestillingen på nytt nedenfor.'
+      });
+      toast.error('Stripe-betalingen ble avbrutt.');
+    }
+  }, [location.search]);
 
   // Live Firestore trip sync when booked
   useEffect(() => {
@@ -355,6 +439,9 @@ export const OrderPage: React.FC = () => {
       loginAsGuest(customerName || 'Gjestekunde', customerPhone, customerEmail);
     }
 
+    const isStripeMethod = paymentMethod === 'card' || (paymentMethod as string) === 'stripe';
+    const initialPaymentStatus = isStripeMethod ? 'pending_payment' : 'pending';
+
     const created = await createTrip({
       customerName: customerName || 'Gjestekunde',
       customerPhone: customerPhone || '+47 900 00 000',
@@ -388,12 +475,49 @@ export const OrderPage: React.FC = () => {
       airportFee: priceDetails.airportFee,
       commissionAron: priceDetails.commissionAron,
       driverPayout: priceDetails.driverPayout,
-      paymentMethod,
-      paymentStatus: 'pending'
+      paymentMethod: isStripeMethod ? 'card' : paymentMethod,
+      paymentStatus: initialPaymentStatus
     });
 
-    setBookedTrip(created);
-    setSubmitting(false);
+    if (isStripeMethod) {
+      toast.info('Oppretter sikker Stripe Checkout-økt...');
+      const sessionRes = await createStripeCheckoutSession({
+        tripId: created.id,
+        amount: finalPayablePrice,
+        pickupAddress: fromPoint.address,
+        destinationAddress: toPoint.address,
+        customerName: customerName || 'Gjestekunde',
+        customerEmail: customerEmail || 'gjest@arontaxi.no',
+        customerPhone: customerPhone || '+47 900 00 000',
+        vehicleTier: selectedTier,
+        distanceKm: routeData.distanceKm,
+        durationMinutes: routeData.durationMinutes,
+        passengers,
+        couponCode: appliedCoupon?.code
+      });
+
+      if (sessionRes.success && sessionRes.url) {
+        toast.success('Videresender til Stripe Checkout...');
+        // Official Stripe Checkout redirect
+        window.location.href = sessionRes.url;
+        return;
+      } else {
+        // Handle Stripe configuration or runtime errors gracefully
+        console.warn('Stripe checkout error:', sessionRes.message);
+        if (sessionRes.error === 'STRIPE_NOT_CONFIGURED') {
+          toast.error('Stripe Secret Key mangler i Secrets.', {
+            description: 'Vennligst legg inn STRIPE_SECRET_KEY i Secrets/miljøvariabler. Turen er midlertidig registrert som manuell betaling.'
+          });
+        } else {
+          toast.error(sessionRes.message || 'Kunne ikke starte Stripe-betaling.');
+        }
+        setBookedTrip(created);
+        setSubmitting(false);
+      }
+    } else {
+      setBookedTrip(created);
+      setSubmitting(false);
+    }
   };
 
   const handleSendRatingAndTip = async () => {
@@ -408,7 +532,77 @@ export const OrderPage: React.FC = () => {
     <div className="min-h-screen bg-[#070A10] text-[#F5F2ED] flex flex-col relative selection:bg-[#D4AF37] selection:text-black">
       <Header />
 
-      <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8 max-w-7xl w-full mx-auto">
+      <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8 max-w-7xl w-full mx-auto space-y-6">
+        
+        {/* PAYMENT VERIFYING OVERLAY BANNER */}
+        {verifyingPayment && (
+          <div className="bg-[#0F1420] border border-[#D4AF37]/50 rounded-2xl p-4 flex items-center justify-between shadow-2xl backdrop-blur-xl animate-pulse">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 text-[#D4AF37] animate-spin" />
+              <div>
+                <h4 className="text-xs font-black text-white uppercase tracking-wider">Verifiserer betaling med Stripe...</h4>
+                <p className="text-[11px] text-slate-400">Bekrefter autorisasjon og klargjør sjåførutsending.</p>
+              </div>
+            </div>
+            <span className="text-xs font-mono text-[#D4AF37] font-bold">Stripe Checkout</span>
+          </div>
+        )}
+
+        {/* PAYMENT STATUS BANNER (SUCCESS / CANCELLED / ERROR) */}
+        {paymentBanner && !verifyingPayment && (
+          <div
+            className={`rounded-2xl p-4 sm:p-5 border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-2xl backdrop-blur-xl ${
+              paymentBanner.type === 'success'
+                ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-100'
+                : paymentBanner.type === 'cancelled'
+                ? 'bg-amber-950/40 border-amber-500/40 text-amber-100'
+                : 'bg-rose-950/40 border-rose-500/40 text-rose-100'
+            }`}
+          >
+            <div className="flex items-start gap-3.5">
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  paymentBanner.type === 'success'
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : paymentBanner.type === 'cancelled'
+                    ? 'bg-amber-500/20 text-amber-400'
+                    : 'bg-rose-500/20 text-rose-400'
+                }`}
+              >
+                {paymentBanner.type === 'success' ? (
+                  <CheckCircle2 className="w-6 h-6" />
+                ) : paymentBanner.type === 'cancelled' ? (
+                  <AlertTriangle className="w-6 h-6" />
+                ) : (
+                  <AlertCircle className="w-6 h-6" />
+                )}
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-sm">{paymentBanner.title}</h3>
+                  {paymentBanner.sessionId && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-black/40 border border-white/10 opacity-80">
+                      ID: {paymentBanner.sessionId.slice(0, 16)}...
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs opacity-90 leading-relaxed max-w-2xl">{paymentBanner.message}</p>
+                {paymentBanner.paymentIntentId && (
+                  <p className="text-[10px] font-mono opacity-75">
+                    Stripe Ref (Payment Intent): {paymentBanner.paymentIntentId}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={() => setPaymentBanner(null)}
+              className="px-3.5 py-1.5 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 self-end sm:self-center"
+            >
+              Lukk
+            </button>
+          </div>
+        )}
         
         {/* IF BOOKING CONFIRMED - LIVE TRACKING */}
         {activeBookedTrip ? (
@@ -445,6 +639,56 @@ export const OrderPage: React.FC = () => {
                 )}
               </div>
             </div>
+
+            {/* STRIPE PAYMENT RECEIPT & STATUS BADGE */}
+            {activeBookedTrip.paymentStatus === 'paid' ? (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-emerald-300 uppercase">Betaling Fullført · Stripe</span>
+                      <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono font-bold">
+                        3D Secure
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Fastpris {activeBookedTrip.estimatedPrice} NOK er betalt. Kvittering sendt til {activeBookedTrip.customerEmail || 'e-post'}.
+                    </p>
+                    {activeBookedTrip.paymentIntentId && (
+                      <span className="text-[10px] font-mono text-emerald-400/80 block mt-0.5">
+                        Transaksjons-ID: {activeBookedTrip.paymentIntentId}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="px-3 py-1.5 bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-right">
+                  <span className="text-[9px] uppercase font-bold text-emerald-300 block">Status</span>
+                  <span className="text-xs font-black text-emerald-200">BETALT MED KORT</span>
+                </div>
+              </div>
+            ) : activeBookedTrip.paymentStatus === 'pending_payment' ? (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex justify-between items-center text-xs">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="w-5 h-5 text-amber-400 animate-spin" />
+                  <div>
+                    <span className="font-bold text-amber-300 block">Venter på Stripe-betaling</span>
+                    <span className="text-[11px] text-slate-400">Fullfør betalingen for å bekrefte bestillingen.</span>
+                  </div>
+                </div>
+                <span className="font-mono font-bold text-amber-400">{activeBookedTrip.estimatedPrice} NOK</span>
+              </div>
+            ) : (
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-3.5 flex justify-between items-center text-xs text-slate-300">
+                <div className="flex items-center gap-2">
+                  <Receipt className="w-4 h-4 text-slate-400" />
+                  <span>Betalingsmåte: <strong className="text-white capitalize">{activeBookedTrip.paymentMethod === 'card' ? 'Bankkort / Stripe' : activeBookedTrip.paymentMethod}</strong></span>
+                </div>
+                <span className="font-mono font-bold text-[#D4AF37]">{activeBookedTrip.estimatedPrice} NOK</span>
+              </div>
+            )}
 
             {/* LIVE MAP TRACKER WITH MOVING DRIVER LOCATION */}
             <div className="space-y-2 text-left">
@@ -1024,30 +1268,55 @@ export const OrderPage: React.FC = () => {
 
                 {/* 6. PAYMENT METHOD */}
                 <div className="space-y-3 pt-4 border-t border-white/10">
-                  <label className="block text-xs font-black text-[#D4AF37] uppercase tracking-wider">
-                    6. Betalingsmåte
-                  </label>
+                  <div className="flex justify-between items-center">
+                    <label className="block text-xs font-black text-[#D4AF37] uppercase tracking-wider">
+                      6. Betalingsmåte
+                    </label>
+                    <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                      <Lock className="w-3 h-3 text-[#D4AF37]" />
+                      256-bit SSL Kryptert
+                    </span>
+                  </div>
+
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                     {[
-                      { id: 'card', name: 'Bankkort' },
-                      { id: 'vipps', name: 'Vipps' },
-                      { id: 'apple_pay', name: 'Apple Pay' },
-                      { id: 'cash', name: 'Kontant' }
+                      { id: 'card', name: 'Kort / Stripe', sub: 'Visa · Mastercard' },
+                      { id: 'vipps', name: 'Vipps', sub: 'Mobilbetaling' },
+                      { id: 'apple_pay', name: 'Apple Pay', sub: 'Touch / Face ID' },
+                      { id: 'cash', name: 'Kontant', sub: 'Betal i bil' }
                     ].map((pm) => (
                       <button
                         key={pm.id}
                         type="button"
                         onClick={() => setPaymentMethod(pm.id as any)}
-                        className={`py-2.5 px-3 rounded-xl border text-center font-bold uppercase transition-all cursor-pointer ${
+                        className={`py-3 px-3 rounded-2xl border text-center transition-all cursor-pointer ${
                           paymentMethod === pm.id
-                            ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37] font-black'
-                            : 'bg-[#090D16] text-slate-300 border-white/10 hover:border-white/20'
+                            ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37] font-black shadow-lg shadow-[#D4AF37]/20 scale-[1.02]'
+                            : 'bg-[#090D16] text-slate-300 border-white/10 hover:border-white/20 font-bold'
                         }`}
                       >
-                        {pm.name}
+                        <div className="uppercase text-xs">{pm.name}</div>
+                        <div className={`text-[10px] font-medium mt-0.5 ${paymentMethod === pm.id ? 'text-slate-900 font-bold' : 'text-slate-500'}`}>
+                          {pm.sub}
+                        </div>
                       </button>
                     ))}
                   </div>
+
+                  {/* STRIPE SECURE BADGE */}
+                  {(paymentMethod === 'card' || (paymentMethod as string) === 'stripe') && (
+                    <div className="p-3 bg-gradient-to-r from-[#D4AF37]/10 via-[#0F1420] to-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <CreditCard className="w-4 h-4 text-[#D4AF37] shrink-0" />
+                        <span className="text-slate-300">
+                          Offisiell <strong>Stripe Checkout</strong> med BankID, 3D Secure og umiddelbar e-postkvittering.
+                        </span>
+                      </div>
+                      <span className="px-2 py-0.5 bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#D4AF37] text-[10px] font-mono font-black rounded-full uppercase shrink-0">
+                        {stripeStatus?.mode === 'live' ? 'Stripe Live' : 'Stripe Testmodus'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* 7. RABATTKODE (CLEAN & SIMPLE INPUT) */}
@@ -1107,12 +1376,18 @@ export const OrderPage: React.FC = () => {
                     {submitting ? (
                       <>
                         <Loader2 className="w-5 h-5 animate-spin" />
-                        Sender bestilling...
+                        {paymentMethod === 'card' ? 'Klargjør Stripe Checkout...' : 'Sender bestilling...'}
                       </>
                     ) : !isPreorder && !isDriverAvailable ? (
                       <>
                         <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
                         Ingen sjåfør ledig nå – Velg Forhåndsbestilling
+                      </>
+                    ) : paymentMethod === 'card' ? (
+                      <>
+                        <CreditCard className="w-4 h-4" />
+                        {isPreorder ? 'Forhåndsbestill & Betal med Stripe' : 'Bekreft & Betal med Stripe'} ({finalPayablePrice > 0 ? `${finalPayablePrice} NOK` : 'Beregner...'})
+                        <ArrowRight className="w-4 h-4" />
                       </>
                     ) : isPreorder ? (
                       <>
