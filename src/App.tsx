@@ -19,6 +19,8 @@ import { DriverLoginPage } from './pages/DriverLoginPage';
 import { DriverDashboardPage } from './pages/DriverDashboardPage';
 import { AdminLoginPage } from './pages/AdminLoginPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { PaymentSuccessPage } from './pages/PaymentSuccessPage';
+import { PaymentCancelledPage } from './pages/PaymentCancelledPage';
 
 export function App() {
   return (
@@ -46,6 +48,8 @@ export function App() {
               {/* PUBLIC PAGES */}
               <Route path="/" element={<HomePage />} />
               <Route path="/bestill" element={<OrderPage />} />
+              <Route path="/betaling/suksess" element={<PaymentSuccessPage />} />
+              <Route path="/betaling/avbrutt" element={<PaymentCancelledPage />} />
               <Route path="/slik-fungerer-det" element={<HowItWorksPage />} />
               <Route path="/biler" element={<VehiclesPage />} />
               <Route path="/for-sjaforer" element={<ForDriversPage />} />

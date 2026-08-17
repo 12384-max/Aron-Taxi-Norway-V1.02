@@ -20,7 +20,7 @@ interface TripContextType {
   expenses: DriverExpense[];
   emergencyAlerts: EmergencyAlert[];
   
-  createTrip: (tripData: Omit<Trip, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => Promise<Trip>;
+  createTrip: (tripData: Omit<Trip, 'id' | 'status' | 'createdAt' | 'updatedAt'>, existingTripId?: string) => Promise<Trip>;
   getTripById: (id: string) => Trip | undefined;
   assignDriverToTrip: (tripId: string, driverId: string) => void;
   acceptTripAtomic: (tripId: string, driverId: string) => Promise<{ success: boolean; error?: string }>;
@@ -296,27 +296,33 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  const createTrip = async (tripData: Omit<Trip, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Promise<Trip> => {
-    const id = `TRIP-${Date.now().toString().slice(-6)}`;
+  const createTrip = async (
+    tripData: Omit<Trip, 'id' | 'status' | 'createdAt' | 'updatedAt'>,
+    existingTripId?: string
+  ): Promise<Trip> => {
+    const id = existingTripId || `TRIP-${Date.now().toString().slice(-6)}`;
     const now = new Date().toISOString();
+
+    const isStripePending = tripData.paymentStatus === 'pending_payment';
+    const initialStatus: TripStatus = isStripePending ? 'pending_payment' : 'confirmed';
 
     const newTrip: Trip = {
       ...tripData,
       id,
       tripId: id,
-      status: 'pending',
+      status: initialStatus,
       rejectedDriverIds: [],
       createdAt: now,
       updatedAt: now
     };
 
-    const updatedTrips = [newTrip, ...trips];
+    const updatedTrips = [newTrip, ...trips.filter((t) => t.id !== id)];
     saveTrips(updatedTrips);
 
     // 1. Notify Admin (push + chime + in-app)
     notificationService.notify({
-      title: '🚕 Ny tur bestilt!',
-      message: `${newTrip.customerName || 'Passasjer'} har bestilt tur fra ${newTrip.pickup?.address || 'Hentested'} til ${newTrip.destination?.address || 'Destinasjon'} (${newTrip.estimatedPrice} kr)`,
+      title: isStripePending ? '💳 Stripe-betaling startet' : '🚕 Ny tur bestilt!',
+      message: `${newTrip.customerName || 'Passasjer'} (${newTrip.pickup?.address || 'Hentested'} → ${newTrip.destination?.address || 'Destinasjon'}, ${newTrip.estimatedPrice} kr)`,
       type: 'trip_created',
       targetRole: 'admin',
       tripId: id,
@@ -324,33 +330,36 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       soundType: 'request'
     });
 
-    // 2. Notify Drivers (chime + push on mobile/PC)
-    notificationService.notify({
-      title: '⚡ Ny turforespørsel tilgjengelig',
-      message: `${newTrip.pickup?.address || 'Oslo'} → ${newTrip.destination?.address || 'Destinasjon'} (${newTrip.estimatedPrice} kr)`,
-      type: 'trip_created',
-      targetRole: 'driver',
-      tripId: id,
-      actionUrl: '/driver',
-      soundType: 'request'
-    });
+    // Only dispatch to drivers and confirm to customer IF paid or cash/invoice!
+    if (!isStripePending) {
+      // 2. Notify Drivers (chime + push on mobile/PC)
+      notificationService.notify({
+        title: '⚡ Ny turforespørsel tilgjengelig',
+        message: `${newTrip.pickup?.address || 'Oslo'} → ${newTrip.destination?.address || 'Destinasjon'} (${newTrip.estimatedPrice} kr)`,
+        type: 'trip_created',
+        targetRole: 'driver',
+        tripId: id,
+        actionUrl: '/driver',
+        soundType: 'request'
+      });
 
-    // 3. Notify Customer
-    notificationService.notify({
-      title: '✅ Bestilling bekreftet',
-      message: `Turforespørsel registrert. Vi søker etter nærmeste ledige sjåfør i Oslo.`,
-      type: 'trip_created',
-      targetRole: 'customer',
-      targetUserId: newTrip.customerId,
-      tripId: id,
-      actionUrl: '/konto',
-      soundType: 'ping'
-    });
+      // 3. Notify Customer
+      notificationService.notify({
+        title: '✅ Bestilling bekreftet',
+        message: `Turforespørsel registrert. Vi søker etter nærmeste ledige sjåfør i Oslo.`,
+        type: 'trip_created',
+        targetRole: 'customer',
+        targetUserId: newTrip.customerId,
+        tripId: id,
+        actionUrl: '/konto',
+        soundType: 'ping'
+      });
+    }
 
     try {
       const cleanData = removeUndefinedFields(newTrip);
       await setDoc(doc(db, 'trips', id), cleanData, { merge: true });
-      console.log('✅ Ny tur synkronisert til skyen (Firestore):', id);
+      console.log('✅ Tur synkronisert til skyen (Firestore):', id, 'status:', initialStatus);
     } catch (err: any) {
       console.error('❌ Feil ved lagring av tur til Firestore:', err?.message || err);
     }

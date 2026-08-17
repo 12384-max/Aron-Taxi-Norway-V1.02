@@ -108,11 +108,16 @@ export const DriverDashboardPage: React.FC = () => {
   // Sound notification tracker
   const prevPendingCount = useRef<number>(0);
 
-  // Incoming pending trips waiting for assignment in Oslo (filtered for unassigned and not rejected by this driver)
+  // Incoming pending trips waiting for assignment in Oslo (filtered for unassigned, paid/cash, and not rejected by this driver)
   const pendingTrips = trips.filter(
     (t) =>
-      (t.status === 'pending' || t.status === 'requested' || t.status === 'searching_driver') &&
+      (t.status === 'pending' || t.status === 'requested' || t.status === 'searching_driver' || t.status === 'confirmed') &&
+      t.status !== 'pending_payment' &&
       !t.driverId &&
+      (!t.paymentMethod || t.paymentMethod === 'cash' || t.paymentMethod === 'invoice' || t.paymentStatus === 'paid') &&
+      t.paymentStatus !== 'pending_payment' &&
+      t.paymentStatus !== 'payment_failed' &&
+      t.paymentStatus !== 'cancelled' &&
       (!t.rejectedDriverIds || !t.rejectedDriverIds.includes(currentDriver?.id || ''))
   );
 

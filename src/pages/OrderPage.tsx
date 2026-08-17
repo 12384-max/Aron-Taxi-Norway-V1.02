@@ -477,7 +477,7 @@ export const OrderPage: React.FC = () => {
       driverPayout: priceDetails.driverPayout,
       paymentMethod: isStripeMethod ? 'card' : paymentMethod,
       paymentStatus: initialPaymentStatus
-    });
+    }, stateLocation.existingTripId);
 
     if (isStripeMethod) {
       toast.info('Oppretter sikker Stripe Checkout-økt...');
@@ -506,12 +506,11 @@ export const OrderPage: React.FC = () => {
         console.warn('Stripe checkout error:', sessionRes.message);
         if (sessionRes.error === 'STRIPE_NOT_CONFIGURED') {
           toast.error('Stripe Secret Key mangler i Secrets.', {
-            description: 'Vennligst legg inn STRIPE_SECRET_KEY i Secrets/miljøvariabler. Turen er midlertidig registrert som manuell betaling.'
+            description: 'Vennligst legg inn STRIPE_SECRET_KEY i Secrets/miljøvariabler for å aktivere kortbetaling.'
           });
         } else {
           toast.error(sessionRes.message || 'Kunne ikke starte Stripe-betaling.');
         }
-        setBookedTrip(created);
         setSubmitting(false);
       }
     } else {

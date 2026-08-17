@@ -7,7 +7,9 @@ import {
   isStripeConfigured,
   getStripeMode,
   updateTripInFirestore,
+  serverDb,
 } from './src/server/stripeService';
+import { doc, getDoc } from 'firebase/firestore';
 
 const app = express();
 const PORT = 3000;
@@ -57,6 +59,7 @@ app.post('/api/create-checkout-session', async (req: Request, res: Response) => 
 
     const {
       tripId,
+      customerId,
       amount,
       pickupAddress,
       destinationAddress,
@@ -77,13 +80,34 @@ app.post('/api/create-checkout-session', async (req: Request, res: Response) => 
       });
     }
 
-    // Determine host / origin for return URLs
-    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:3000';
-    const requestOrigin = req.headers.origin || `${proto}://${host}`;
-    const baseUrl = process.env.APP_URL && process.env.APP_URL.startsWith('http')
-      ? process.env.APP_URL.replace(/\/$/, '')
-      : requestOrigin;
+    // Production domain is https://arontaxioslo.no
+    const defaultProdUrl = 'https://arontaxioslo.no';
+    
+    // In dev / preview environments, support host headers if provided, otherwise default to production domain
+    let baseUrl = defaultProdUrl;
+    if (process.env.APP_URL && process.env.APP_URL.startsWith('http')) {
+      baseUrl = process.env.APP_URL.replace(/\/$/, '');
+    } else if (req.headers.origin && typeof req.headers.origin === 'string') {
+      const origin = req.headers.origin.trim();
+      if (!origin.includes('localhost') && !origin.includes('workers.dev')) {
+        baseUrl = origin.replace(/\/$/, '');
+      }
+    }
+
+    // Security check: Validate amount against stored trip if it already exists in Firestore
+    let validatedAmount = amount;
+    try {
+      const tripSnap = await getDoc(doc(serverDb, 'trips', tripId));
+      if (tripSnap.exists()) {
+        const storedTrip = tripSnap.data();
+        if (storedTrip.estimatedPrice && typeof storedTrip.estimatedPrice === 'number' && storedTrip.estimatedPrice > 0) {
+          validatedAmount = storedTrip.estimatedPrice;
+          console.log(`[Stripe Backend] 🔒 Server validerte beløp mot Firestore: ${validatedAmount} NOK`);
+        }
+      }
+    } catch (dbErr) {
+      console.warn('[Stripe Backend] Firestore trip lookup note:', dbErr);
+    }
 
     const tierNameMap: Record<string, string> = {
       vip_black: 'Aron Black VIP Executive',
@@ -117,13 +141,14 @@ app.post('/api/create-checkout-session', async (req: Request, res: Response) => 
                 destinationAddress: cleanDest,
               },
             },
-            unit_amount: Math.round(amount * 100), // Beløp i øre (NOK * 100)
+            unit_amount: Math.round(validatedAmount * 100), // Beløp i øre (NOK * 100)
           },
           quantity: 1,
         },
       ],
       metadata: {
         tripId,
+        customerId: customerId || '',
         customerName: customerName || '',
         customerPhone: customerPhone || '',
         customerEmail: customerEmail || '',
@@ -135,10 +160,10 @@ app.post('/api/create-checkout-session', async (req: Request, res: Response) => 
         passengers: passengers ? String(passengers) : '1',
         couponCode: couponCode || '',
       },
-      success_url: `${baseUrl}/bestill?session_id={CHECKOUT_SESSION_ID}&payment_status=success&trip_id=${encodeURIComponent(
+      success_url: `${baseUrl}/betaling/suksess?session_id={CHECKOUT_SESSION_ID}&trip_id=${encodeURIComponent(
         tripId
       )}`,
-      cancel_url: `${baseUrl}/bestill?payment_status=cancelled&trip_id=${encodeURIComponent(
+      cancel_url: `${baseUrl}/betaling/avbrutt?trip_id=${encodeURIComponent(
         tripId
       )}`,
     });
@@ -202,9 +227,9 @@ app.get('/api/verify-checkout-session', async (req: Request, res: Response) => {
         paymentIntentId: paymentIntentId || undefined,
         paidAt: new Date().toISOString(),
         paymentMethod: 'stripe',
-        status: 'requested', // Real-time dispatch to drivers
+        status: 'confirmed', // Confirmed & ready for driver assignment
       });
-      console.log(`[Stripe Backend] ✅ Tur ${targetTripId} verifisert som BETALT via direkte sesjonskontroll.`);
+      console.log(`[Stripe Backend] ✅ Tur ${targetTripId} verifisert som BETALT (paid / confirmed).`);
     }
 
     return res.json({
@@ -271,9 +296,9 @@ const handleStripeWebhook = async (req: Request, res: Response) => {
             paymentIntentId: paymentIntentId || undefined,
             paidAt: new Date().toISOString(),
             paymentMethod: 'stripe',
-            status: 'requested', // Sender bestillingen i sanntid til sjåførene
+            status: 'confirmed', // Sender bekreftet tur til sjåførene
           });
-          console.log(`[Stripe Webhook] ✅ Tur ${tripId} markert som BETALT og sendt til sjåførpool via webhook.`);
+          console.log(`[Stripe Webhook] ✅ Tur ${tripId} markert som BETALT (paid / confirmed) og klargjort for sjåførpool.`);
         }
         break;
       }

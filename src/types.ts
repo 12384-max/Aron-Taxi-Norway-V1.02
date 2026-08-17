@@ -1,6 +1,8 @@
 export type TripStatus =
   | 'pending'
+  | 'pending_payment'
   | 'requested'
+  | 'confirmed'
   | 'searching_driver'
   | 'accepted'
   | 'driver_assigned'

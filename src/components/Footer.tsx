@@ -60,6 +60,11 @@ export const Footer: React.FC = () => {
                 </Link>
               </li>
               <li>
+                <Link to="/bli-sjafor" className="hover:text-[#D4AF37] text-emerald-400 font-semibold transition-colors">
+                  ✦ Søk om å bli sjåfør (/bli-sjafor)
+                </Link>
+              </li>
+              <li>
                 <Link to="/login" className="hover:text-[#D4AF37] transition-colors">
                   Kunde Logg inn / Registrer
                 </Link>
