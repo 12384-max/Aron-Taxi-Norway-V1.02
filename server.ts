@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import 'dotenv/config';
 import { createServer as createViteServer } from 'vite';
@@ -13,6 +13,17 @@ import { doc, getDoc } from 'firebase/firestore';
 
 const app = express();
 const PORT = 3000;
+
+// Enable CORS for all origins (production domain, previews, mobile clients)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, stripe-signature');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 // 1. RAW BODY PARSER FOR STRIPE WEBHOOK (Must precede express.json())
 app.use(
@@ -48,8 +59,15 @@ app.get('/api/stripe-config', (_req: Request, res: Response) => {
 
 // 3. CREATE STRIPE CHECKOUT SESSION
 app.post('/api/create-checkout-session', async (req: Request, res: Response) => {
+  console.log('[Stripe Server] 📥 Mottok /api/create-checkout-session:', {
+    tripId: req.body?.tripId,
+    amount: req.body?.amount,
+    customerName: req.body?.customerName,
+  });
+
   try {
     if (!isStripeConfigured()) {
+      console.warn('[Stripe Server] ⚠️ STRIPE_SECRET_KEY mangler i Secrets/miljøvariabler.');
       return res.status(503).json({
         error: 'STRIPE_NOT_CONFIGURED',
         message:
@@ -94,11 +112,13 @@ app.post('/api/create-checkout-session', async (req: Request, res: Response) => 
       }
     }
 
-    // Security check: Validate amount against stored trip if it already exists in Firestore
+    // Security check: Validate amount against stored trip if it exists (with fast timeout)
     let validatedAmount = amount;
     try {
-      const tripSnap = await getDoc(doc(serverDb, 'trips', tripId));
-      if (tripSnap.exists()) {
+      const fetchTripPromise = getDoc(doc(serverDb, 'trips', tripId));
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500));
+      const tripSnap: any = await Promise.race([fetchTripPromise, timeoutPromise]);
+      if (tripSnap && tripSnap.exists && tripSnap.exists()) {
         const storedTrip = tripSnap.data();
         if (storedTrip.estimatedPrice && typeof storedTrip.estimatedPrice === 'number' && storedTrip.estimatedPrice > 0) {
           validatedAmount = storedTrip.estimatedPrice;
@@ -106,7 +126,7 @@ app.post('/api/create-checkout-session', async (req: Request, res: Response) => 
         }
       }
     } catch (dbErr) {
-      console.warn('[Stripe Backend] Firestore trip lookup note:', dbErr);
+      console.warn('[Stripe Backend] Firestore trip lookup note (non-blocking):', dbErr);
     }
 
     const tierNameMap: Record<string, string> = {
@@ -168,14 +188,14 @@ app.post('/api/create-checkout-session', async (req: Request, res: Response) => 
       )}`,
     });
 
-    // Mark trip as pending_payment in Firestore
-    await updateTripInFirestore(tripId, {
+    // Mark trip as pending_payment in Firestore asynchronously
+    updateTripInFirestore(tripId, {
       paymentStatus: 'pending_payment',
       stripeSessionId: session.id,
       paymentMethod: 'stripe',
-    });
+    }).catch((err) => console.warn('[Stripe Backend] Async trip update note:', err));
 
-    console.log(`[Stripe Backend] ✅ Checkout Session opprettet for tur ${tripId}: ${session.id}`);
+    console.log(`[Stripe Backend] ✅ Checkout Session opprettet for tur ${tripId}: ${session.id} (URL: ${session.url})`);
 
     return res.json({
       success: true,
@@ -183,9 +203,9 @@ app.post('/api/create-checkout-session', async (req: Request, res: Response) => 
       sessionId: session.id,
     });
   } catch (error: any) {
-    console.error('[Stripe Backend] ❌ Feil ved oppretting av checkout session:', error?.message || error);
+    console.error('[Stripe Backend] ❌ Feil ved oppretting av checkout session:', error);
     return res.status(500).json({
-      error: 'STRIPE_SESSION_FAILED',
+      error: error?.code || 'STRIPE_SESSION_FAILED',
       message: error?.message || 'Kunne ikke opprette Stripe Checkout Session.',
     });
   }
