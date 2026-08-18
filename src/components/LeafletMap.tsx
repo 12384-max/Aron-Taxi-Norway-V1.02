@@ -86,10 +86,34 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
 
       mapRef.current = map;
       layerGroupRef.current = L.layerGroup().addTo(map);
+
+      // Force immediate resize calculation
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 100);
     }
 
+    // ResizeObserver to handle container / viewport size transitions seamlessly
+    const resizeObserver = new ResizeObserver(() => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize();
+      }
+    });
+
+    if (mapContainerRef.current) {
+      resizeObserver.observe(mapContainerRef.current);
+    }
+
+    const handleWindowResize = () => {
+      if (mapRef.current) {
+        mapRef.current.invalidateSize();
+      }
+    };
+    window.addEventListener('resize', handleWindowResize);
+
     return () => {
-      // Don't destroy on every re-render, keep instance alive
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', handleWindowResize);
     };
   }, []);
 

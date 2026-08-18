@@ -116,17 +116,18 @@ app.post('/api/create-checkout-session', async (req: Request, res: Response) => 
     let validatedAmount = amount;
     try {
       const fetchTripPromise = getDoc(doc(serverDb, 'trips', tripId));
-      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500));
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200));
       const tripSnap: any = await Promise.race([fetchTripPromise, timeoutPromise]);
-      if (tripSnap && tripSnap.exists && tripSnap.exists()) {
+      if (tripSnap && typeof tripSnap.exists === 'function' && tripSnap.exists()) {
         const storedTrip = tripSnap.data();
-        if (storedTrip.estimatedPrice && typeof storedTrip.estimatedPrice === 'number' && storedTrip.estimatedPrice > 0) {
+        if (storedTrip?.estimatedPrice && typeof storedTrip.estimatedPrice === 'number' && storedTrip.estimatedPrice > 0) {
           validatedAmount = storedTrip.estimatedPrice;
           console.log(`[Stripe Backend] 🔒 Server validerte beløp mot Firestore: ${validatedAmount} NOK`);
         }
       }
-    } catch (dbErr) {
-      console.warn('[Stripe Backend] Firestore trip lookup note (non-blocking):', dbErr);
+    } catch (dbErr: any) {
+      // Non-blocking fallback: proceed with client-supplied amount
+      console.log(`[Stripe Backend] Tur-validering benytter overført beløp (${amount} NOK)`);
     }
 
     const tierNameMap: Record<string, string> = {

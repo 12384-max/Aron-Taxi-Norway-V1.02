@@ -79,6 +79,7 @@ import { AdminCouponsTab } from '../components/admin/AdminCouponsTab';
 import { AdminNotificationsTab } from '../components/admin/AdminNotificationsTab';
 import { AdminReportsTab } from '../components/admin/AdminReportsTab';
 import { AdminApplicationsTab } from '../components/admin/AdminApplicationsTab';
+import { AdminDispatchTaxiCallerTab } from '../components/admin/AdminDispatchTaxiCallerTab';
 import { Invoice, Coupon, BroadcastNotification, SurgeZone, CorporatePartner, DriverApplication } from '../types';
 
 export const AdminDashboardPage: React.FC = () => {
@@ -88,6 +89,8 @@ export const AdminDashboardPage: React.FC = () => {
     vehicles, 
     customers,
     pricing, 
+    createTrip,
+    deleteTrip,
     updatePricing, 
     assignDriverToTrip, 
     updateTripStatus, 
@@ -116,7 +119,7 @@ export const AdminDashboardPage: React.FC = () => {
 
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'trips' | 'invoices' | 'drivers' | 'applications' | 'customers' | 'vehicles' | 'surge' | 'partners' | 'coupons' | 'reports' | 'notifications' | 'pricing'
+    'overview' | 'dispatch' | 'trips' | 'invoices' | 'drivers' | 'applications' | 'customers' | 'vehicles' | 'surge' | 'partners' | 'coupons' | 'reports' | 'notifications' | 'pricing'
   >('overview');
   const [overviewDateRange, setOverviewDateRange] = useState<'day' | 'week' | 'month' | 'total'>('month');
   const [tripFilter, setTripFilter] = useState<string>('all');
@@ -1218,6 +1221,18 @@ export const AdminDashboardPage: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('dispatch')}
+            className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'dispatch'
+                ? 'bg-[#E5B83B] text-slate-950 font-black shadow-lg shadow-[#E5B83B]/20'
+                : 'text-[#E5B83B] hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 fill-current" />
+            Taxicaller Sentral
+          </button>
+
+          <button
             onClick={() => setActiveTab('trips')}
             className={`px-3.5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'trips'
@@ -1380,6 +1395,21 @@ export const AdminDashboardPage: React.FC = () => {
             updateTripStatus={updateTripStatus}
             dateRange={overviewDateRange}
             setDateRange={setOverviewDateRange}
+          />
+        )}
+
+        {/* TAXICALLER DISPATCH TAB */}
+        {activeTab === 'dispatch' && (
+          <AdminDispatchTaxiCallerTab
+            trips={trips}
+            drivers={drivers}
+            vehicles={vehicles}
+            pricing={pricing}
+            onCreateTrip={createTrip}
+            onAssignDriver={assignDriverToTrip}
+            onUpdateTripStatus={updateTripStatus}
+            onDeleteTrip={deleteTrip}
+            onToggleDriverOnline={toggleDriverOnline}
           />
         )}
 

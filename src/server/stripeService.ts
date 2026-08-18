@@ -49,41 +49,27 @@ export interface TripPaymentUpdate {
 
 /**
  * Updates trip in Firestore upon Stripe webhook or verification
+ * Uses setDoc with merge: true directly to avoid consuming unnecessary read quota.
  */
 export async function updateTripInFirestore(tripId: string, updates: TripPaymentUpdate) {
   if (!tripId) return;
 
   try {
     const tripRef = doc(serverDb, 'trips', tripId);
-    const snap = await getDoc(tripRef);
     const now = new Date().toISOString();
 
-    if (snap.exists()) {
-      const currentData = snap.data();
-      const newStatus = updates.status || (currentData.status === 'pending' || currentData.status === 'requested' ? 'requested' : currentData.status);
-
-      await updateDoc(tripRef, {
+    await setDoc(
+      tripRef,
+      {
+        id: tripId,
+        tripId,
         ...updates,
-        status: newStatus,
         updatedAt: now,
-      });
-      console.log(`[Stripe Backend] ✅ Firestore trip ${tripId} oppdatert med status: ${updates.paymentStatus}`);
-    } else {
-      await setDoc(
-        tripRef,
-        {
-          id: tripId,
-          tripId,
-          ...updates,
-          status: updates.status || 'requested',
-          createdAt: now,
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-      console.log(`[Stripe Backend] 🆕 Firestore trip ${tripId} opprettet/merged med status: ${updates.paymentStatus}`);
-    }
+      },
+      { merge: true }
+    );
+    console.log(`[Stripe Backend] ✅ Firestore trip ${tripId} oppdatert med status: ${updates.paymentStatus}`);
   } catch (error: any) {
-    console.error(`[Stripe Backend] ❌ Feil ved oppdatering av tur ${tripId} i Firestore:`, error?.message || error);
+    console.warn(`[Stripe Backend] Merknad ved lagring av tur ${tripId} i Firestore:`, error?.message || error);
   }
 }

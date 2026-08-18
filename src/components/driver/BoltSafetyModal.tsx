@@ -5,19 +5,33 @@ import { toast } from 'sonner';
 interface BoltSafetyModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onTriggerSOS: () => void;
+  onTriggerSOS?: () => void;
+  onTriggerEmergency?: () => void;
   hasActiveTrip?: boolean;
+  driverName?: string;
+  vehiclePlate?: string;
 }
 
 export const BoltSafetyModal: React.FC<BoltSafetyModalProps> = ({
   isOpen,
   onClose,
   onTriggerSOS,
+  onTriggerEmergency,
   hasActiveTrip,
+  driverName,
+  vehiclePlate,
 }) => {
   const [audioRecording, setAudioRecording] = useState(false);
 
   if (!isOpen) return null;
+
+  const triggerAlert = () => {
+    if (onTriggerEmergency) {
+      onTriggerEmergency();
+    } else if (onTriggerSOS) {
+      onTriggerSOS();
+    }
+  };
 
   const handleShareTrip = () => {
     if (navigator.share) {
@@ -89,7 +103,7 @@ export const BoltSafetyModal: React.FC<BoltSafetyModalProps> = ({
           {/* SOS Sentral */}
           <button
             onClick={() => {
-              onTriggerSOS();
+              triggerAlert();
               onClose();
             }}
             className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 transition-colors text-left"
