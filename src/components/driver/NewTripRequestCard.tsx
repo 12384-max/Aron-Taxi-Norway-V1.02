@@ -93,6 +93,39 @@ export const NewTripRequestCard: React.FC<NewTripRequestCardProps> = ({
           </div>
         </div>
 
+        {/* PAYMENT STATUS BADGE */}
+        <div className="flex items-center justify-between bg-black/60 border border-white/10 rounded-2xl px-3.5 py-2">
+          <div className="flex items-center gap-2">
+            {trip.paymentStatus === 'paid' || trip.paymentStatus === 'succeeded' ? (
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            ) : (
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
+            )}
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Betalingsstatus:</span>
+          </div>
+
+          <div>
+            {trip.paymentStatus === 'paid' || trip.paymentStatus === 'succeeded' ? (
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[11px] font-black tracking-wide flex items-center gap-1">
+                <Check className="w-3 h-3 stroke-[3]" />
+                BETALT ({trip.paymentMethod === 'nets_card' ? 'Nets Test' : trip.paymentMethod === 'stripe' ? 'Kort' : 'Kort/Vipps'})
+              </span>
+            ) : trip.paymentMethod === 'cash' ? (
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-bold">
+                Betales i bil (Kontant)
+              </span>
+            ) : trip.paymentMethod === 'invoice' ? (
+              <span className="px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/40 text-[11px] font-bold">
+                Bedriftsfaktura
+              </span>
+            ) : (
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-bold">
+                Betales i bil (Kort/Vipps)
+              </span>
+            )}
+          </div>
+        </div>
+
         {/* METRICS & PAYOUT */}
         <div className="grid grid-cols-2 gap-2 bg-[#171E2D] border border-white/10 rounded-2xl p-3">
           <div>

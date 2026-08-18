@@ -17,6 +17,7 @@ import {
   checkStripeStatus,
   StripeConfigStatus
 } from '../services/stripeClient';
+import { NetsTestCheckoutModal } from '../components/payment/NetsTestCheckoutModal';
 import {
   MapPin,
   Navigation,
@@ -113,7 +114,7 @@ const VEHICLE_TIERS: TierOption[] = [
 export const OrderPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { createTrip, pricing, addTipAndRatingToTrip, trips, drivers } = useTrips();
+  const { createTrip, pricing, addTipAndRatingToTrip, trips, drivers, updateTripPaymentStatus } = useTrips();
   const { user, loginAsGuest } = useAuth();
 
   const stateLocation = location.state || {};
@@ -148,6 +149,10 @@ export const OrderPage: React.FC = () => {
   const [scheduledTime, setScheduledTime] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<'vipps' | 'card' | 'apple_pay' | 'cash' | 'invoice' | 'stripe'>('card');
+
+  // Nets Test Checkout Modal State
+  const [showNetsModal, setShowNetsModal] = useState<boolean>(false);
+  const [pendingNetsTrip, setPendingNetsTrip] = useState<Trip | null>(null);
 
   // Stripe Payment & Verification State
   const [verifyingPayment, setVerifyingPayment] = useState<boolean>(false);
@@ -479,40 +484,12 @@ export const OrderPage: React.FC = () => {
       paymentStatus: initialPaymentStatus
     }, stateLocation.existingTripId);
 
-    if (isStripeMethod) {
-      toast.info('Oppretter sikker Stripe Checkout-økt...');
-      const sessionRes = await createStripeCheckoutSession({
-        tripId: created.id,
-        amount: finalPayablePrice,
-        pickupAddress: fromPoint.address,
-        destinationAddress: toPoint.address,
-        customerName: customerName || 'Gjestekunde',
-        customerEmail: customerEmail || 'gjest@arontaxi.no',
-        customerPhone: customerPhone || '+47 900 00 000',
-        vehicleTier: selectedTier,
-        distanceKm: routeData.distanceKm,
-        durationMinutes: routeData.durationMinutes,
-        passengers,
-        couponCode: appliedCoupon?.code
-      });
-
-      if (sessionRes.success && sessionRes.url) {
-        toast.success('Videresender til Stripe Checkout...');
-        // Official Stripe Checkout redirect
-        window.location.href = sessionRes.url;
-        return;
-      } else {
-        // Handle Stripe configuration or runtime errors gracefully
-        console.warn('Stripe checkout error:', sessionRes.message);
-        if (sessionRes.error === 'STRIPE_NOT_CONFIGURED') {
-          toast.info('Bestillingen er bekreftet og sendt til sjåfør! Du kan betale med kort/Vipps direkte i bilen.');
-          setBookedTrip(created);
-        } else {
-          toast.info('Bestilling bekreftet! Sjåfør er varslet.');
-          setBookedTrip(created);
-        }
-        setSubmitting(false);
-      }
+    if (paymentMethod === 'card' || paymentMethod === 'stripe') {
+      // Trigger Nets Easy Test Checkout Modal
+      setPendingNetsTrip(created);
+      setShowNetsModal(true);
+      setSubmitting(false);
+      return;
     } else {
       setBookedTrip(created);
       toast.success('🎉 Bestillingen er bekreftet! Nærmeste sjåfør varsles nå.');
@@ -1280,7 +1257,7 @@ export const OrderPage: React.FC = () => {
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                     {[
-                      { id: 'card', name: 'Kort / Stripe', sub: 'Visa · Mastercard' },
+                      { id: 'card', name: 'Kort / Nets Easy', sub: 'Visa · Mastercard · Nets' },
                       { id: 'vipps', name: 'Vipps', sub: 'Mobilbetaling' },
                       { id: 'apple_pay', name: 'Apple Pay', sub: 'Touch / Face ID' },
                       { id: 'cash', name: 'Kontant', sub: 'Betal i bil' }
@@ -1303,17 +1280,17 @@ export const OrderPage: React.FC = () => {
                     ))}
                   </div>
 
-                  {/* STRIPE SECURE BADGE */}
+                  {/* NETS / STRIPE SECURE BADGE */}
                   {(paymentMethod === 'card' || (paymentMethod as string) === 'stripe') && (
-                    <div className="p-3 bg-gradient-to-r from-[#D4AF37]/10 via-[#0F1420] to-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+                    <div className="p-3 bg-gradient-to-r from-emerald-500/10 via-[#0F1420] to-emerald-500/10 border border-emerald-500/30 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
                       <div className="flex items-center gap-2.5">
-                        <CreditCard className="w-4 h-4 text-[#D4AF37] shrink-0" />
+                        <CreditCard className="w-4 h-4 text-emerald-400 shrink-0" />
                         <span className="text-slate-300">
-                          Offisiell <strong>Stripe Checkout</strong> med BankID, 3D Secure og umiddelbar e-postkvittering.
+                          Sikker betaling via <strong>Nets Easy / Nexi Checkout</strong> med BankID og 3D Secure.
                         </span>
                       </div>
-                      <span className="px-2 py-0.5 bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#D4AF37] text-[10px] font-mono font-black rounded-full uppercase shrink-0">
-                        {stripeStatus?.mode === 'live' ? 'Stripe Live' : 'Stripe Testmodus'}
+                      <span className="px-2 py-0.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[10px] font-mono font-black rounded-full uppercase shrink-0">
+                        Nets Testmiljø Aktivt
                       </span>
                     </div>
                   )}
@@ -1559,6 +1536,41 @@ export const OrderPage: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* NETS EASY TEST CHECKOUT MODAL */}
+        <NetsTestCheckoutModal
+          isOpen={showNetsModal}
+          onClose={() => {
+            setShowNetsModal(false);
+            setSubmitting(false);
+          }}
+          amount={pendingNetsTrip ? (pendingNetsTrip.estimatedPrice || finalPayablePrice) : finalPayablePrice}
+          tripId={pendingNetsTrip?.id || 'TUR-TEST'}
+          pickupAddress={fromPoint.address || 'Oslo sentrum'}
+          destinationAddress={toPoint.address || 'Oslo Lufthavn Gardermoen'}
+          customerName={customerName || 'Gjestekunde'}
+          customerEmail={customerEmail || 'gjest@arontaxi.no'}
+          customerPhone={customerPhone || '+47 900 00 000'}
+          onPaymentSuccess={async (paymentDetails) => {
+            if (pendingNetsTrip) {
+              await updateTripPaymentStatus(pendingNetsTrip.id, 'paid', 'nets_card', {
+                paymentId: paymentDetails.paymentId,
+                maskedCardNumber: paymentDetails.maskedCard,
+                paymentBrand: paymentDetails.paymentMethod
+              });
+              const updatedTrip: Trip = {
+                ...pendingNetsTrip,
+                paymentStatus: 'paid',
+                paymentMethod: 'nets_card',
+                status: 'requested',
+                paidAt: new Date().toISOString()
+              };
+              setBookedTrip(updatedTrip);
+              setShowNetsModal(false);
+              toast.success('🎉 Betaling godkjent i Nets testmiljø! Turen er bekreftet og sendt til sjåfør.');
+            }
+          }}
+        />
 
       </main>
 

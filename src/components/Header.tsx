@@ -25,7 +25,8 @@ export const Header: React.FC = () => {
             <img
               src={OFFICIAL_ASSETS.logo}
               alt="Aron Taxi Norway Logo"
-              className="h-11 w-auto object-contain transition-transform duration-300 group-hover:scale-105"
+              referrerPolicy="no-referrer"
+              className="h-12 w-12 rounded-2xl object-cover border border-[#D4AF37]/40 shadow-lg shadow-amber-500/10 transition-transform duration-300 group-hover:scale-105"
             />
             <div className="hidden sm:block text-left">
               <span className="block font-display text-lg tracking-wider font-semibold text-[#F5F2ED] group-hover:text-[#D4AF37] transition-colors">

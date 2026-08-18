@@ -39,12 +39,13 @@ const firebaseApp = !getApps().length ? initializeApp(firebaseConfig) : getApp()
 export const serverDb = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
 
 export interface TripPaymentUpdate {
-  paymentStatus: 'paid' | 'payment_failed' | 'cancelled' | 'pending_payment';
+  paymentStatus: 'paid' | 'payment_failed' | 'cancelled' | 'pending_payment' | 'pending' | 'succeeded';
   stripeSessionId?: string;
   paymentIntentId?: string;
+  paymentId?: string;
   paidAt?: string;
   status?: string;
-  paymentMethod?: 'stripe' | 'card' | 'vipps' | 'apple_pay' | 'cash' | 'invoice';
+  paymentMethod?: 'stripe' | 'card' | 'vipps' | 'apple_pay' | 'cash' | 'invoice' | 'nets_card' | string;
 }
 
 /**

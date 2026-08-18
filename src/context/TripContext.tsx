@@ -26,6 +26,7 @@ interface TripContextType {
   acceptTripAtomic: (tripId: string, driverId: string) => Promise<{ success: boolean; error?: string }>;
   rejectTrip: (tripId: string, driverId: string) => Promise<void>;
   updateTripStatus: (tripId: string, status: TripStatus, location?: { lat: number; lng: number }) => void;
+  updateTripPaymentStatus: (tripId: string, paymentStatus: 'paid' | 'pending' | 'failed' | 'refunded', paymentMethod?: string, extraDetails?: Partial<Trip>) => Promise<void>;
   deleteTrip: (tripId: string) => Promise<void>;
   cancelTrip: (tripId: string, reason?: string) => Promise<void>;
   toggleDriverOnline: (driverId: string, isOnline?: boolean) => Promise<void>;
@@ -850,6 +851,66 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (e) {}
   };
 
+  const updateTripPaymentStatus = async (
+    tripId: string,
+    paymentStatus: 'paid' | 'pending' | 'failed' | 'refunded',
+    paymentMethod: string = 'nets_card',
+    extraDetails?: Partial<Trip>
+  ) => {
+    const now = new Date().toISOString();
+    const targetTrip = trips.find((t) => t.id === tripId || t.tripId === tripId);
+
+    const updated = trips.map((t) => {
+      if (t.id === tripId || t.tripId === tripId) {
+        return {
+          ...t,
+          paymentStatus,
+          paymentMethod: paymentMethod as any,
+          status: paymentStatus === 'paid' ? ('requested' as TripStatus) : t.status,
+          paidAt: paymentStatus === 'paid' ? now : t.paidAt,
+          updatedAt: now,
+          ...extraDetails,
+        };
+      }
+      return t;
+    });
+
+    saveTrips(updated);
+
+    if (paymentStatus === 'paid') {
+      // 1. Notify Drivers (chime + push on mobile/PC)
+      notificationService.notify({
+        title: '⚡ Ny turforespørsel (Betalt med Nets)',
+        message: `${targetTrip?.pickup?.address || 'Oslo'} → ${targetTrip?.destination?.address || 'Destinasjon'} (${targetTrip?.estimatedPrice || ''} kr)`,
+        type: 'trip_created',
+        targetRole: 'driver',
+        tripId: tripId,
+        actionUrl: '/driver',
+        soundType: 'request',
+      });
+
+      // 2. Notify Admin
+      notificationService.notify({
+        title: '💳 Betaling godkjent i Nets testmiljø',
+        message: `Tur ${tripId} er betalt (${targetTrip?.estimatedPrice} kr).`,
+        type: 'trip_created',
+        targetRole: 'admin',
+        tripId: tripId,
+        actionUrl: '/admin',
+        soundType: 'accepted',
+      });
+    }
+
+    try {
+      const updatedTripObj = updated.find((t) => t.id === tripId || t.tripId === tripId);
+      if (updatedTripObj) {
+        await setDoc(doc(db, 'trips', tripId), removeUndefinedFields(updatedTripObj), { merge: true });
+      }
+    } catch (err: any) {
+      console.warn('updateTripPaymentStatus Firestore write note:', err?.message || err);
+    }
+  };
+
   const deleteTrip = async (tripId: string) => {
     const updated = trips.filter((t) => t.id !== tripId && t.tripId !== tripId);
     saveTrips(updated);
@@ -1443,6 +1504,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         acceptTripAtomic,
         rejectTrip,
         updateTripStatus,
+        updateTripPaymentStatus,
         deleteTrip,
         cancelTrip,
         toggleDriverOnline,

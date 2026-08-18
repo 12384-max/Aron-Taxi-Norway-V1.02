@@ -3,6 +3,7 @@ import eqeFront from '../assets/images/real_mercedes_eqe_front_1786900915150.jpg
 import eqeSide from '../assets/images/real_mercedes_eqe_side_1786900927080.jpg';
 import eqeInterior from '../assets/images/real_mercedes_eqe_interior_1786900938158.jpg';
 import eqeRear from '../assets/images/real_mercedes_eqe_rear_1786900951388.jpg';
+import aronMainLogo from '../assets/images/aron_main_logo_1787080912780.jpg';
 
 export const TESLA_MODEL_Y_IMAGES = [
   'https://cdn.shopify.com/s/files/1/0749/4212/0071/files/WhatsApp_Image_2026-08-05_at_22.57.55_2.jpg?v=1786652864',
@@ -17,7 +18,7 @@ export const MERCEDES_EQE_IMAGES = [
 ];
 
 export const OFFICIAL_ASSETS = {
-  logo: 'https://cdn.shopify.com/s/files/1/0749/4212/0071/files/ChatGPT_Image_25._juli_2026_22_28_14.png?v=1785534957',
+  logo: aronMainLogo,
   teslaCars: TESLA_MODEL_Y_IMAGES,
   mercedesCars: MERCEDES_EQE_IMAGES,
   company: {

@@ -162,9 +162,22 @@ export const TripStatusOverlay: React.FC<TripStatusOverlayProps> = ({
 
             {/* Both summary lines when expanded */}
             <div className="border-t border-white/10 pt-2 flex items-center justify-between text-[11px] text-slate-400">
-              <span>{trip.vehicleCategory === 'airport_vip' ? 'Flyplass VIP Express' : 'Aron VIP'}</span>
+              <div className="flex items-center gap-1.5">
+                <span>{trip.vehicleCategory === 'airport_vip' ? 'Flyplass VIP Express' : 'Aron VIP'}</span>
+                <span className="w-1 h-1 rounded-full bg-slate-600" />
+                {trip.paymentStatus === 'paid' || trip.paymentStatus === 'succeeded' ? (
+                  <span className="text-emerald-400 font-bold flex items-center gap-1">
+                    <Check className="w-3 h-3 stroke-[3]" />
+                    Betalt ({trip.paymentMethod === 'nets_card' ? 'Nets' : 'Kort/Vipps'})
+                  </span>
+                ) : (
+                  <span className="text-amber-400 font-semibold">
+                    {trip.paymentMethod === 'cash' ? 'Kontant i bil' : 'Betales i bil'}
+                  </span>
+                )}
+              </div>
               <span className="text-emerald-400 font-mono font-bold">
-                Utbetaling: kr {Math.round((trip.finalPrice || trip.estimatedPrice) * 0.85)} (Brutto {trip.finalPrice || trip.estimatedPrice} kr)
+                Utbetaling: kr {Math.round((trip.finalPrice || trip.estimatedPrice) * 0.85)}
               </span>
             </div>
           </div>

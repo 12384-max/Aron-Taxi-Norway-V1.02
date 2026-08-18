@@ -11,11 +11,12 @@ export const Footer: React.FC = () => {
           
           {/* BRAND COLUMN */}
           <div className="space-y-4 md:col-span-1">
-            <Link to="/" className="inline-block">
+            <Link to="/" className="inline-block group">
               <img
                 src={OFFICIAL_ASSETS.logo}
-                alt="Aron Taxi Norway"
-                className="h-11 w-auto object-contain"
+                alt="Aron Taxi Norway Logo"
+                referrerPolicy="no-referrer"
+                className="h-14 w-14 rounded-2xl object-cover border border-[#D4AF37]/40 shadow-lg shadow-amber-500/10 transition-transform duration-300 group-hover:scale-105"
               />
             </Link>
             <p className="font-display text-lg font-semibold text-[#F5F2ED]">
