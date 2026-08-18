@@ -206,7 +206,7 @@ export const HomePage: React.FC = () => {
                           key={idx}
                           type="button"
                           onClick={() => {
-                            setFromQuery(item.address.split(',')[0]);
+                            setFromQuery(item?.address ? item.address.split(',')[0] : (item?.address || ''));
                             setSelectedFrom(item);
                             setFromSuggestions([]);
                           }}
@@ -243,7 +243,7 @@ export const HomePage: React.FC = () => {
                           key={idx}
                           type="button"
                           onClick={() => {
-                            setToQuery(item.address.split(',')[0]);
+                            setToQuery(item?.address ? item.address.split(',')[0] : (item?.address || ''));
                             setSelectedTo(item);
                             setToSuggestions([]);
                           }}

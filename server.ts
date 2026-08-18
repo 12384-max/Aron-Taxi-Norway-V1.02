@@ -376,8 +376,19 @@ const handleStripeWebhook = async (req: Request, res: Response) => {
   }
 };
 
-app.post('/api/stripe/webhook', handleStripeWebhook);
-app.post('/api/stripe-webhook', handleStripeWebhook);
+// 5. STRIPE WEBHOOK HANDLER (GET for health check, POST for Stripe events)
+app.get(['/api/stripe/webhook', '/api/stripe-webhook'], (_req: Request, res: Response) => {
+  return res.status(200).json({
+    status: 'ok',
+    service: 'Aron Taxi Stripe Webhook Endpoint',
+    stripeConfigured: isStripeConfigured(),
+    mode: getStripeMode(),
+    timestamp: new Date().toISOString(),
+    message: 'Stripe Webhook-endepunktet er aktivt og lytter etter POST-hendelser fra Stripe.',
+  });
+});
+
+app.post(['/api/stripe/webhook', '/api/stripe-webhook'], handleStripeWebhook);
 
 // 6. VITE MIDDLEWARE (DEV) & STATIC FILES (PROD)
 async function startServer() {
@@ -396,7 +407,9 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Aron Taxi server kjører på http://0.0.0.0:${PORT}`);
+    console.log(`🚖 Aron Taxi Norway server kjører på port ${PORT}`);
+    console.log(`🌐 Hoveddomene: https://arontaxioslo.no`);
+    console.log(`🔗 Cloud Run: ${process.env.APP_URL || 'https://ais-pre-2gimjy77jh25l3otwz67wn-220634877794.europe-west1.run.app'}`);
     console.log(`💳 Stripe Status: ${isStripeConfigured() ? `Tilkoblet (${getStripeMode()} mode)` : 'Venter på STRIPE_SECRET_KEY'}`);
   });
 }

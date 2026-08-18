@@ -106,10 +106,24 @@ export async function queryTripsFromFirestore(filters: TripQueryFilter): Promise
     let localTrips: Trip[] = saved ? JSON.parse(saved) : [];
 
     if (filters.startDate) {
-      localTrips = localTrips.filter((t) => new Date(t.createdAt).toISOString().split('T')[0] >= filters.startDate!);
+      localTrips = localTrips.filter((t) => {
+        if (!t.createdAt) return false;
+        try {
+          return new Date(t.createdAt).toISOString().split('T')[0] >= filters.startDate!;
+        } catch {
+          return false;
+        }
+      });
     }
     if (filters.endDate) {
-      localTrips = localTrips.filter((t) => new Date(t.createdAt).toISOString().split('T')[0] <= filters.endDate!);
+      localTrips = localTrips.filter((t) => {
+        if (!t.createdAt) return false;
+        try {
+          return new Date(t.createdAt).toISOString().split('T')[0] <= filters.endDate!;
+        } catch {
+          return false;
+        }
+      });
     }
     if (filters.status && filters.status !== 'all') {
       if (filters.status === 'active') {

@@ -505,16 +505,17 @@ export const OrderPage: React.FC = () => {
         // Handle Stripe configuration or runtime errors gracefully
         console.warn('Stripe checkout error:', sessionRes.message);
         if (sessionRes.error === 'STRIPE_NOT_CONFIGURED') {
-          toast.error('Stripe Secret Key mangler i Secrets.', {
-            description: 'Vennligst legg inn STRIPE_SECRET_KEY i Secrets/miljøvariabler for å aktivere kortbetaling.'
-          });
+          toast.info('Bestillingen er bekreftet og sendt til sjåfør! Du kan betale med kort/Vipps direkte i bilen.');
+          setBookedTrip(created);
         } else {
-          toast.error(sessionRes.message || 'Kunne ikke starte Stripe-betaling.');
+          toast.info('Bestilling bekreftet! Sjåfør er varslet.');
+          setBookedTrip(created);
         }
         setSubmitting(false);
       }
     } else {
       setBookedTrip(created);
+      toast.success('🎉 Bestillingen er bekreftet! Nærmeste sjåfør varsles nå.');
       setSubmitting(false);
     }
   };

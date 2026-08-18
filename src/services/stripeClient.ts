@@ -42,6 +42,46 @@ export interface StripeConfigStatus {
   message: string;
 }
 
+// Candidate backend API hosts in order of priority
+const CANDIDATE_API_HOSTS = [
+  '', // Same origin (relative)
+  (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, ''),
+  'https://ais-pre-2gimjy77jh25l3otwz67wn-220634877794.europe-west1.run.app',
+  'https://ais-dev-2gimjy77jh25l3otwz67wn-220634877794.europe-west1.run.app',
+].filter((url, index, self) => (url !== undefined && self.indexOf(url) === index));
+
+let cachedWorkingHost: string | null = null;
+
+function getApiBaseHosts(): string[] {
+  // If we already found a working host in this session, try that first
+  const remembered = cachedWorkingHost || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('aron_working_api_host') : null);
+  if (remembered !== null && CANDIDATE_API_HOSTS.includes(remembered)) {
+    return [remembered, ...CANDIDATE_API_HOSTS.filter((h) => h !== remembered)];
+  }
+
+  // If running on custom domain (like arontaxioslo.no) where static hosting might not have backend, prioritize cloud run URL
+  if (typeof window !== 'undefined' && window.location.hostname.includes('arontaxioslo.no')) {
+    return [
+      'https://ais-pre-2gimjy77jh25l3otwz67wn-220634877794.europe-west1.run.app',
+      '',
+      'https://ais-dev-2gimjy77jh25l3otwz67wn-220634877794.europe-west1.run.app',
+    ];
+  }
+
+  return CANDIDATE_API_HOSTS;
+}
+
+function setWorkingHost(host: string) {
+  cachedWorkingHost = host;
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('aron_working_api_host', host);
+    }
+  } catch {
+    // Ignore storage restrictions
+  }
+}
+
 /**
  * Calls the secure backend endpoint to create a Stripe Checkout Session.
  * Stripe Secret Key is strictly maintained on the server-side.
@@ -49,59 +89,81 @@ export interface StripeConfigStatus {
 export async function createStripeCheckoutSession(
   params: CreateSessionParams
 ): Promise<StripeSessionResult> {
-  try {
-    const apiEndpoint = '/api/create-checkout-session';
-    const res = await fetch(apiEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(params),
-    });
+  const hosts = getApiBaseHosts();
+  let lastError: any = null;
 
-    const rawText = await res.text();
-    let data: any = {};
+  for (const host of hosts) {
     try {
-      data = JSON.parse(rawText);
-    } catch (parseErr) {
-      console.error('Server returned non-JSON response:', rawText);
-      return {
-        success: false,
-        error: 'INVALID_SERVER_RESPONSE',
-        message: `Betalingsserver svarte med status ${res.status}: ${rawText.slice(0, 100)}`,
-      };
-    }
+      const endpoint = `${host}/api/create-checkout-session`;
+      console.log(`[Stripe Client] Prøver å opprette checkout-økt via: ${endpoint || '/'}`);
 
-    if (!res.ok) {
-      return {
-        success: false,
-        error: data.error || 'SERVER_ERROR',
-        message: data.message || `Betalingsfeil fra server (${res.status})`,
-      };
-    }
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(params),
+      });
 
-    if (!data.url) {
-      return {
-        success: false,
-        error: 'NO_CHECKOUT_URL',
-        message: 'Mottok ingen Checkout-URL fra Stripe.',
-      };
-    }
+      const status = res.status;
+      const rawText = await res.text();
 
-    return {
-      success: true,
-      url: data.url,
-      sessionId: data.sessionId,
-    };
-  } catch (err: any) {
-    console.error('Stripe create session error:', err);
-    return {
-      success: false,
-      error: 'NETWORK_ERROR',
-      message: err?.message ? `Nettverksfeil: ${err.message}` : 'Nettverksfeil ved kontakt med betalingsserveren.',
-    };
+      // If static host returns 405 (Method Not Allowed), 404, or HTML page, try next backend host
+      if (status === 405 || status === 404 || rawText.startsWith('<!DOCTYPE') || rawText.includes('Cannot POST')) {
+        console.warn(`[Stripe Client] Vert ${host || 'relativ'} svarte med status ${status} (ikke Node.js backend). Prøver neste vert...`);
+        lastError = {
+          success: false,
+          error: 'HOST_NOT_API',
+          message: `Vert ${host || 'lokal'} støttet ikke API-forespørsel (${status}).`,
+        };
+        continue;
+      }
+
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseErr) {
+        console.warn(`[Stripe Client] JSON parse feil fra ${host}:`, rawText);
+        continue;
+      }
+
+      if (!res.ok) {
+        return {
+          success: false,
+          error: data.error || 'SERVER_ERROR',
+          message: data.message || `Betalingsfeil fra server (${res.status})`,
+        };
+      }
+
+      if (!data.url) {
+        return {
+          success: false,
+          error: 'NO_CHECKOUT_URL',
+          message: 'Mottok ingen Checkout-URL fra Stripe.',
+        };
+      }
+
+      // Successfully connected to backend
+      setWorkingHost(host);
+      return {
+        success: true,
+        url: data.url,
+        sessionId: data.sessionId,
+      };
+    } catch (err: any) {
+      console.warn(`[Stripe Client] Nettverksfeil mot vert ${host}:`, err?.message || err);
+      lastError = err;
+    }
   }
+
+  return {
+    success: false,
+    error: 'NETWORK_ERROR',
+    message: lastError?.message
+      ? `Tilkoblingsfeil: ${lastError.message}`
+      : 'Kunne ikke nå betalingsserveren. Vennligst sjekk internettforbindelsen og prøv igjen.',
+  };
 }
 
 /**
@@ -111,77 +173,89 @@ export async function verifyStripeSession(
   sessionId: string,
   tripId?: string
 ): Promise<VerificationResult> {
-  try {
-    const url = new URL('/api/verify-checkout-session', window.location.origin);
-    url.searchParams.set('session_id', sessionId);
-    if (tripId) url.searchParams.set('trip_id', tripId);
+  const hosts = getApiBaseHosts();
+  let lastError: any = null;
 
-    const res = await fetch(url.toString(), {
-      headers: { Accept: 'application/json' },
-    });
-    const rawText = await res.text();
-    let data: any = {};
+  for (const host of hosts) {
     try {
-      data = JSON.parse(rawText);
-    } catch {
-      return {
-        success: false,
-        isPaid: false,
-        error: 'INVALID_RESPONSE',
-        message: 'Uventet svar fra betalingsserveren.',
-      };
-    }
+      const endpoint = `${host}/api/verify-checkout-session?session_id=${encodeURIComponent(
+        sessionId
+      )}${tripId ? `&trip_id=${encodeURIComponent(tripId)}` : ''}`;
 
-    if (!res.ok) {
-      return {
-        success: false,
-        isPaid: false,
-        error: data.error,
-        message: data.message || 'Kunne ikke verifisere betaling.',
-      };
-    }
+      const res = await fetch(endpoint, {
+        headers: { Accept: 'application/json' },
+      });
 
-    return {
-      success: true,
-      isPaid: data.isPaid,
-      sessionStatus: data.sessionStatus,
-      paymentStatus: data.paymentStatus,
-      tripId: data.tripId,
-      paymentIntentId: data.paymentIntentId,
-      amountTotal: data.amountTotal,
-      currency: data.currency,
-      customerEmail: data.customerEmail,
-    };
-  } catch (err: any) {
-    console.error('Stripe verify session error:', err);
-    return {
-      success: false,
-      isPaid: false,
-      error: 'NETWORK_ERROR',
-      message: 'Kunne ikke nå betalingsserveren for verifisering.',
-    };
+      const status = res.status;
+      const rawText = await res.text();
+
+      if (status === 404 || status === 405 || rawText.startsWith('<!DOCTYPE')) {
+        continue;
+      }
+
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        continue;
+      }
+
+      if (!res.ok) {
+        return {
+          success: false,
+          isPaid: false,
+          error: data.error,
+          message: data.message || 'Kunne ikke verifisere betaling.',
+        };
+      }
+
+      setWorkingHost(host);
+      return {
+        success: true,
+        isPaid: data.isPaid,
+        sessionStatus: data.sessionStatus,
+        paymentStatus: data.paymentStatus,
+        tripId: data.tripId,
+        paymentIntentId: data.paymentIntentId,
+        amountTotal: data.amountTotal,
+        currency: data.currency,
+        customerEmail: data.customerEmail,
+      };
+    } catch (err: any) {
+      lastError = err;
+    }
   }
+
+  return {
+    success: false,
+    isPaid: false,
+    error: 'NETWORK_ERROR',
+    message: 'Kunne ikke nå betalingsserveren for verifisering.',
+  };
 }
 
 /**
  * Checks if Stripe backend is active and configured.
  */
 export async function checkStripeStatus(): Promise<StripeConfigStatus> {
-  try {
-    const res = await fetch('/api/stripe-config');
-    if (!res.ok) {
-      return {
-        isConfigured: false,
-        mode: 'test',
-        message: 'Betalingsserver svarte ikke.',
-      };
+  const hosts = getApiBaseHosts();
+  for (const host of hosts) {
+    try {
+      const res = await fetch(`${host}/api/stripe-config`);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data && typeof data.isConfigured === 'boolean') {
+        setWorkingHost(host);
+        return data;
+      }
+    } catch {
+      // Try next
     }
-    return await res.json();
-  } catch (e) {
-    return {
-      isConfigured: false,
-      mode: 'test',
-      message: 'Server offline',
-    };
   }
+
+  return {
+    isConfigured: false,
+    mode: 'test',
+    message: 'Betalingsserver offline',
+  };
 }

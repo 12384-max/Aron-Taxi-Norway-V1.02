@@ -851,12 +851,12 @@ export const AdminDashboardPage: React.FC = () => {
 
     // 3. Date Range Filter
     if (tripStartDate) {
-      const tripDateStr = new Date(t.createdAt).toISOString().split('T')[0];
-      if (tripDateStr < tripStartDate) return false;
+      const tripDateStr = t.createdAt ? new Date(t.createdAt).toISOString().split('T')[0] : '';
+      if (tripDateStr && tripDateStr < tripStartDate) return false;
     }
     if (tripEndDate) {
-      const tripDateStr = new Date(t.createdAt).toISOString().split('T')[0];
-      if (tripDateStr > tripEndDate) return false;
+      const tripDateStr = t.createdAt ? new Date(t.createdAt).toISOString().split('T')[0] : '';
+      if (tripDateStr && tripDateStr > tripEndDate) return false;
     }
 
     return true;
@@ -1669,7 +1669,7 @@ export const AdminDashboardPage: React.FC = () => {
                                   : 'bg-white/5 text-slate-300 hover:bg-white/10'
                               }`}
                             >
-                              {d.name.split(' ')[0]}
+                              {d.name ? d.name.split(' ')[0] : `Sjåfør ${dIdx + 1}`}
                             </button>
                           ))}
                         </div>

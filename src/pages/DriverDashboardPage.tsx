@@ -1,69 +1,61 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Header } from '../components/Header';
-import { Footer } from '../components/Footer';
 import { LeafletMap } from '../components/LeafletMap';
 import { useAuth } from '../context/AuthContext';
 import { useTrips } from '../context/TripContext';
 import { Trip, Driver, Vehicle } from '../types';
 import { soundService } from '../services/sound';
-import { OFFICIAL_ASSETS } from '../constants/assets';
+
+// Bolt Driver Components
+import { BoltDriverDrawer } from '../components/driver/BoltDriverDrawer';
+import { BoltSafetyModal } from '../components/driver/BoltSafetyModal';
+import { BoltPreferencesModal } from '../components/driver/BoltPreferencesModal';
+import { BoltDestinationModal } from '../components/driver/BoltDestinationModal';
+import { BoltSurgeModal } from '../components/driver/BoltSurgeModal';
+import { BoltEarningsView } from '../components/driver/BoltEarningsView';
+import { BoltEarnMoreView } from '../components/driver/BoltEarnMoreView';
+import { BoltRidesView } from '../components/driver/BoltRidesView';
+import { BoltHelpView } from '../components/driver/BoltHelpView';
+import { BoltScheduledRidesModal } from '../components/driver/BoltScheduledRidesModal';
+import { BoltCampaignsModal } from '../components/driver/BoltCampaignsModal';
+
 import {
-  Car,
-  Power,
-  MapPin,
-  Navigation,
-  Clock,
-  CheckCircle2,
-  DollarSign,
-  Percent,
-  ShieldCheck,
-  ShieldAlert,
-  AlertCircle,
-  Check,
   Menu,
-  X,
-  Phone,
-  User,
-  History,
-  TrendingUp,
+  Shield,
+  Zap,
+  Power,
+  Flame,
+  Navigation,
+  Sliders,
+  Crosshair,
+  ChevronRight,
   Award,
   Star,
-  Settings,
-  LogOut,
+  Home,
+  Wallet,
+  Clock,
+  History,
+  HelpCircle,
+  Check,
+  X,
+  Phone,
+  MessageSquare,
+  ChevronUp,
+  ChevronDown,
+  Gift,
+  Sparkles,
+  MapPin,
+  Car,
+  Trash2,
   Volume2,
   VolumeX,
-  Layers,
-  ChevronRight,
-  Luggage,
-  Users,
-  Compass,
-  Flame,
-  Zap,
-  ExternalLink,
-  MessageSquare,
-  AlertTriangle,
-  RotateCcw,
-  Sparkles,
-  ArrowRight,
   Radio
 } from 'lucide-react';
 
-// Demand Hotspots in Oslo region with surge multipliers
-const OSLO_HOTSPOTS = [
-  { id: 'h1', name: 'Oslo S / Jernbanetorget', lat: 59.9111, lng: 10.7528, surge: '1.5x', category: 'Sentrum' },
-  { id: 'h2', name: 'Oslo Lufthavn Gardermoen', lat: 60.1975, lng: 11.1004, surge: '1.6x', category: 'Flyplass' },
-  { id: 'h3', name: 'Majorstuen / Bogstadveien', lat: 59.9298, lng: 10.7145, surge: '1.3x', category: 'Shopping' },
-  { id: 'h4', name: 'Nationaltheatret / Solli', lat: 59.9145, lng: 10.7335, surge: '1.4x', category: 'Natteliv' },
-  { id: 'h5', name: 'Aker Brygge / Tjuvholmen', lat: 59.9103, lng: 10.7275, surge: '1.4x', category: 'Restaurant' },
-  { id: 'h6', name: 'Grünerløkka / Olaf Ryes', lat: 59.9229, lng: 10.7584, surge: '1.3x', category: 'Kafé & Bar' },
-  { id: 'h7', name: 'Fornebu / Telenor Arena', lat: 59.8966, lng: 10.6268, surge: '1.2x', category: 'Næring' }
-];
-
 export const DriverDashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout } = useAuth();
   const {
     trips,
     drivers,
@@ -74,48 +66,81 @@ export const DriverDashboardPage: React.FC = () => {
     acceptTripAtomic,
     rejectTrip,
     updateTripStatus,
-    addTipAndRatingToTrip,
+    deleteTrip,
+    cancelTrip,
     triggerEmergencyAlert,
-    emergencyAlerts
   } = useTrips();
 
-  // Find driver object in real Firestore collection
-  const currentDriver: Driver | undefined = drivers.find(
-    (d) => d.id === user?.uid || d.email?.toLowerCase() === user?.email?.toLowerCase()
-  ) || drivers[0];
+  // Find driver object
+  const currentDriver: Driver | undefined =
+    drivers.find(
+      (d) => d.id === user?.uid || d.email?.toLowerCase() === user?.email?.toLowerCase()
+    ) || drivers[0];
 
-  // Active navigation tab
-  const [activeTab, setActiveTab] = useState<'drive' | 'earnings' | 'trips' | 'hotspots' | 'vehicle' | 'profile' | 'settings'>('drive');
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // Active Bottom Tab: 'home' | 'earn_more' | 'rides' | 'help'
+  const [activeTab, setActiveTab] = useState<'home' | 'earn_more' | 'rides' | 'help'>('home');
+
+  // Modals & Sub-views
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [showSafetyModal, setShowSafetyModal] = useState(false);
+  const [showPreferencesModal, setShowPreferencesModal] = useState(false);
+  const [showDestinationModal, setShowDestinationModal] = useState(false);
+  const [showSurgeModal, setShowSurgeModal] = useState(false);
+  const [showScheduledModal, setShowScheduledModal] = useState(false);
+  const [showCampaignsModal, setShowCampaignsModal] = useState(false);
+  const [showEarningsView, setShowEarningsView] = useState(false);
+
+  // States
+  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [activeDestination, setActiveDestination] = useState<string>('');
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [autoAccept, setAutoAccept] = useState(false);
-  const [showHotspots, setShowHotspots] = useState(true);
-  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
-  const [emergencySending, setEmergencySending] = useState(false);
-  const [emergencySuccessMessage, setEmergencySuccessMessage] = useState<string | null>(null);
-
-  // Incoming ride request countdown timer (15 seconds)
   const [incomingCountdown, setIncomingCountdown] = useState(15);
-  const [activeTripSummary, setActiveTripSummary] = useState<Trip | null>(null);
-
-  // Waiting timer for passenger (seconds)
   const [waitingSeconds, setWaitingSeconds] = useState(0);
+  const [onlineSeconds, setOnlineSeconds] = useState(0);
+  const [bottomSheetExpanded, setBottomSheetExpanded] = useState(false);
+  const [showSmsModal, setShowSmsModal] = useState(false);
 
-  // Passenger rating modal state
-  const [passengerRating, setPassengerRating] = useState<number>(5);
-  const [selectedCompliments, setSelectedCompliments] = useState<string[]>(['Presis', 'Hyggelig']);
-
-  // Sound notification tracker
   const prevPendingCount = useRef<number>(0);
 
-  // Incoming pending trips waiting for assignment in Oslo (filtered for unassigned, paid/cash, and not rejected by this driver)
+  // Active Vehicle
+  const currentVehicle: Vehicle =
+    vehicles.find((v) => v.id === currentDriver?.vehicleId) || vehicles[0];
+
+  // Live online timer counter
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+    if (currentDriver?.isOnline) {
+      timer = setInterval(() => {
+        setOnlineSeconds((prev) => prev + 1);
+      }, 1000);
+    } else {
+      setOnlineSeconds(0);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [currentDriver?.isOnline]);
+
+  // Format online time into hh:mm:ss
+  const formatOnlineDuration = (totalSeconds: number) => {
+    const hrs = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    if (hrs > 0) {
+      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Incoming pending trips in Oslo - clean filter allowing all payments (Card, Vipps, Cash, Invoice, Stripe)
   const pendingTrips = trips.filter(
     (t) =>
-      (t.status === 'pending' || t.status === 'requested' || t.status === 'searching_driver' || t.status === 'confirmed') &&
+      (t.status === 'pending' ||
+        t.status === 'requested' ||
+        t.status === 'searching_driver' ||
+        t.status === 'confirmed') &&
       t.status !== 'pending_payment' &&
       !t.driverId &&
-      (!t.paymentMethod || t.paymentMethod === 'cash' || t.paymentMethod === 'invoice' || t.paymentStatus === 'paid') &&
-      t.paymentStatus !== 'pending_payment' &&
       t.paymentStatus !== 'payment_failed' &&
       t.paymentStatus !== 'cancelled' &&
       (!t.rejectedDriverIds || !t.rejectedDriverIds.includes(currentDriver?.id || ''))
@@ -135,32 +160,31 @@ export const DriverDashboardPage: React.FC = () => {
     (t) => t.driverId === currentDriver?.id && t.status === 'completed'
   );
 
-  // Check if this driver has an active emergency alert
-  const myActiveAlert = emergencyAlerts.find(
-    (a) => a.driverId === currentDriver?.id && a.status === 'active'
+  // Today's completed trips
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayCompletedTrips = myCompletedTrips.filter((t) =>
+    (t.completedAt || t.createdAt || '').startsWith(todayStr)
   );
+
+  const todayGross = todayCompletedTrips.reduce(
+    (acc, t) => acc + (t.finalPrice || t.estimatedPrice || 0),
+    0
+  );
+  const todayNet = Math.round(todayGross * 0.85);
 
   // Sound chime when new trip arrives and driver is ONLINE
   useEffect(() => {
     if (currentDriver?.isOnline && pendingTrips.length > prevPendingCount.current) {
       if (soundEnabled) {
-        soundService.playTripRequestChime(0.85);
+        soundService.playTripRequestChime(0.9);
       }
       setIncomingCountdown(15);
-      toast.info('Ny Bolt-turforespørsel i Oslo!', {
-        description: `${pendingTrips[0]?.pickup?.address} → ${pendingTrips[0]?.destination?.address} (${pendingTrips[0]?.estimatedPrice} kr)`
+      toast.info('🚕 Ny turforespørsel i Oslo!', {
+        description: `${pendingTrips[0]?.pickup?.address} → ${pendingTrips[0]?.destination?.address} (${pendingTrips[0]?.estimatedPrice} kr)`,
       });
     }
     prevPendingCount.current = pendingTrips.length;
   }, [pendingTrips.length, currentDriver?.isOnline, soundEnabled]);
-
-  // Auto-accept mode handler
-  useEffect(() => {
-    if (autoAccept && currentDriver?.isOnline && pendingTrips.length > 0 && !activeTrip) {
-      const targetTrip = pendingTrips[0];
-      handleAcceptTrip(targetTrip.id);
-    }
-  }, [autoAccept, pendingTrips, currentDriver?.isOnline, activeTrip]);
 
   // Countdown timer for incoming request
   useEffect(() => {
@@ -168,9 +192,7 @@ export const DriverDashboardPage: React.FC = () => {
 
     const timer = setInterval(() => {
       setIncomingCountdown((prev) => {
-        if (prev <= 1) {
-          return 15;
-        }
+        if (prev <= 1) return 15;
         return prev - 1;
       });
     }, 1000);
@@ -178,7 +200,7 @@ export const DriverDashboardPage: React.FC = () => {
     return () => clearInterval(timer);
   }, [currentDriver?.isOnline, pendingTrips.length, activeTrip]);
 
-  // Live GPS geolocation watch position while ONLINE
+  // GPS tracking while online
   useEffect(() => {
     if (!currentDriver?.id || !currentDriver.isOnline) return;
 
@@ -186,17 +208,18 @@ export const DriverDashboardPage: React.FC = () => {
     if ('geolocation' in navigator) {
       watchId = navigator.geolocation.watchPosition(
         (pos) => {
-          const coords = {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            heading: pos.coords.heading || 0,
-            speed: pos.coords.speed || 0
-          };
-          updateDriverLocation(currentDriver.id, coords, activeTrip?.id);
+          updateDriverLocation(
+            currentDriver.id,
+            {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+              heading: pos.coords.heading || 0,
+              speed: pos.coords.speed || 0,
+            },
+            activeTrip?.id
+          );
         },
-        (err) => {
-          console.warn('Driver GPS watch info:', err.message);
-        },
+        (err) => console.warn('Driver GPS watch note:', err.message),
         { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
       );
     }
@@ -206,7 +229,7 @@ export const DriverDashboardPage: React.FC = () => {
     };
   }, [currentDriver?.id, currentDriver?.isOnline, activeTrip?.id]);
 
-  // Timer when driver has arrived at pickup waiting for customer
+  // Waiting timer for passenger
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     if (activeTrip?.status === 'driver_arrived') {
@@ -221,1445 +244,819 @@ export const DriverDashboardPage: React.FC = () => {
     };
   }, [activeTrip?.status]);
 
-  // Authentication guards
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-[#0A0E17] text-[#F8FAFC] flex flex-col justify-center items-center px-4">
-        <div className="max-w-md w-full bg-[#111827] border border-white/10 rounded-3xl p-8 text-center space-y-6 shadow-2xl">
-          <div className="w-16 h-16 bg-[#34D186]/15 border border-[#34D186]/40 rounded-full flex items-center justify-center mx-auto text-[#34D186]">
-            <ShieldCheck className="w-8 h-8" />
-          </div>
-          <h2 className="text-2xl font-black text-white">Sjåførinnlogging påkrevd</h2>
-          <p className="text-xs text-slate-400">
-            Du må logge inn på din godkjente sjåførkonto for å få tilgang til Bolt-sjåførportalen.
-          </p>
-          <button
-            onClick={() => navigate('/driver/login')}
-            className="w-full py-4 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black uppercase text-xs rounded-2xl shadow-xl transition-all cursor-pointer"
-          >
-            Gå til Sjåfør Innlogging
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!currentDriver) {
-    return (
-      <div className="min-h-screen bg-[#0A0E17] text-[#F8FAFC] flex flex-col justify-center items-center px-4">
-        <div className="max-w-md w-full bg-[#111827] border border-white/10 rounded-3xl p-8 text-center space-y-6 shadow-2xl">
-          <AlertCircle className="w-12 h-12 text-amber-400 mx-auto" />
-          <h2 className="text-2xl font-black text-white">Sjåførprofil ikke funnet</h2>
-          <p className="text-xs text-slate-400">
-            Denne kontoen ({user.email}) har ikke en aktiv sjåførprofil registrert av Aron Taxi administrasjon.
-          </p>
-          <div className="pt-2 flex flex-col gap-2.5">
-            <button
-              onClick={() => navigate('/konto')}
-              className="w-full py-3 bg-white/5 border border-white/10 text-slate-200 font-bold uppercase text-xs rounded-xl hover:bg-white/10"
-            >
-              Gå til Kundekonto
-            </button>
-            <button
-              onClick={() => logout()}
-              className="w-full py-3 bg-rose-500/10 text-rose-300 font-bold uppercase text-xs rounded-xl hover:bg-rose-500/20"
-            >
-              Logg ut
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ==========================================
-  // VEHICLE SELECTION SCREEN (IF NO VEHICLE CHOSEN)
-  // ==========================================
-  if (!currentDriver.vehicleId) {
-    const allowedVehicles = vehicles.filter((v) => {
-      if (currentDriver.assignedVehicles && currentDriver.assignedVehicles.length > 0) {
-        return currentDriver.assignedVehicles.includes(v.id);
-      }
-      return true;
-    });
-
-    return (
-      <div className="min-h-screen bg-[#0B0F19] text-[#F8FAFC] flex flex-col">
-        <header className="h-16 bg-[#111827] border-b border-white/10 px-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-[#34D186] text-slate-950 flex items-center justify-center font-black text-sm">
-              B
-            </div>
-            <span className="font-black text-sm tracking-wider uppercase text-white">
-              Aron Taxi · Bolt Driver
-            </span>
-          </div>
-          <button
-            onClick={() => logout()}
-            className="text-xs text-slate-400 hover:text-white"
-          >
-            Logg ut
-          </button>
-        </header>
-
-        <main className="flex-1 py-10 px-4 sm:px-6 max-w-4xl w-full mx-auto space-y-6">
-          <div className="text-center space-y-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#34D186]/15 border border-[#34D186]/30 text-[#34D186] text-[10px] font-black uppercase tracking-widest">
-              <Car className="w-3.5 h-3.5" />
-              START VAKT · VELG KJØRETØY
-            </div>
-            <h1 className="text-3xl font-black text-white">Velg ditt kjøretøy for vakten</h1>
-            <p className="text-xs sm:text-sm text-slate-400 max-w-lg mx-auto">
-              Velg det autoriserte drosjekjøretøyet du skal betjene. Løyve og bilnummer knyttes til alle dine turer.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
-            {allowedVehicles.map((vehicle) => (
-              <div
-                key={vehicle.id}
-                className="bg-[#111827] border border-white/10 hover:border-[#34D186]/60 rounded-3xl overflow-hidden shadow-2xl transition-all flex flex-col group"
-              >
-                <div className="h-44 w-full bg-slate-900 overflow-hidden relative">
-                  <img
-                    src={vehicle.imageUrls[0] || OFFICIAL_ASSETS.teslaCars[0]}
-                    alt={vehicle.model}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <div className="absolute top-3 right-3 px-3 py-1 bg-black/80 backdrop-blur-md border border-white/10 rounded-full text-[10px] font-black text-[#34D186]">
-                    100% Elektrisk
-                  </div>
-                </div>
-
-                <div className="p-6 space-y-4 flex-1 flex flex-col justify-between">
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="text-lg font-black text-white">{vehicle.model}</h3>
-                        <p className="text-xs text-slate-400">{vehicle.color} · Årsmodell {vehicle.year}</p>
-                      </div>
-                      <span className="px-3 py-1 bg-black/60 border border-white/10 font-mono text-xs font-black text-[#34D186] rounded-xl">
-                        {vehicle.licensePlate}
-                      </span>
-                    </div>
-
-                    <div className="p-3 bg-black/40 rounded-2xl border border-white/5 space-y-2 text-xs">
-                      <div className="flex justify-between text-slate-400">
-                        <span>Løyvenummer:</span>
-                        <span className="font-black text-slate-200 font-mono">{vehicle.permitNumber}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>Kapasitet:</span>
-                        <span className="font-semibold text-slate-200">{vehicle.seats} Passasjerer</span>
-                      </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>Rekkevidde:</span>
-                        <span className="font-semibold text-slate-200">{vehicle.rangeKm} km</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={async () => {
-                      await selectDriverVehicle(currentDriver.id, vehicle.id);
-                      toast.success(`Valgte ${vehicle.model} (${vehicle.licensePlate})!`);
-                    }}
-                    className="w-full py-3.5 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Check className="w-4 h-4" />
-                    Velg Dette Kjøretøyet
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  // ==========================================
-  // DRIVER ACTIONS & HANDLERS
-  // ==========================================
-  const handleToggleOnline = () => {
+  const handleToggleOnline = async () => {
+    if (!currentDriver) return;
     const nextState = !currentDriver.isOnline;
-    toggleDriverOnline(currentDriver.id, nextState);
+    await toggleDriverOnline(currentDriver.id, nextState);
     if (nextState) {
+      toast.success('🟢 Du er nå ONLINE og kartet er i fullskjerm-modus!');
       if (soundEnabled) soundService.playTripAcceptedSound(0.5);
-      toast.success('🟢 Du er nå PÅ NETT i Oslo!', {
-        description: 'Klar for å motta nye turoppdrag med 85% sjåførutbetaling.'
-      });
     } else {
-      toast.info('Du er nå FRAKOBLET (Offline).');
+      toast.info('🔴 Du er nå OFFLINE.');
     }
   };
 
   const handleAcceptTrip = async (tripId: string) => {
+    if (!currentDriver) return;
     const res = await acceptTripAtomic(tripId, currentDriver.id);
     if (res.success) {
+      toast.success('Tur godtatt! Naviger til henteadresse.');
       if (soundEnabled) soundService.playTripAcceptedSound(0.8);
-      toast.success('Tur godtatt! Følg ruten til henteadressen.');
     } else {
       toast.error(res.error || 'Kunne ikke godta turen.');
     }
   };
 
-  const handleArrivedAtPickup = (tripId: string) => {
-    updateTripStatus(tripId, 'driver_arrived');
-    if (soundEnabled) soundService.playTripAcceptedSound(0.6);
-    toast.success('Du har ankommet henteadressen! Passasjer er varslet.');
-  };
-
-  const handleStartTrip = (tripId: string) => {
-    updateTripStatus(tripId, 'trip_started');
-    if (soundEnabled) soundService.playTripAcceptedSound(0.6);
-    toast.success('Turen er startet! God kjøretur til destinasjonen.');
-  };
-
-  const handleCompleteTrip = (trip: Trip) => {
-    updateTripStatus(trip.id, 'completed');
-    if (soundEnabled) soundService.playTripCompletedSound(0.8);
-    setActiveTripSummary(trip);
-    toast.success('Turen er fullført! Oppgjør er overført.');
-  };
-
   const handleRejectTrip = async (tripId: string) => {
-    if (currentDriver) {
-      await rejectTrip(tripId, currentDriver.id);
-      toast.info('Turforespørsel avvist.');
+    if (!currentDriver) return;
+    await rejectTrip(tripId, currentDriver.id);
+    toast.info('Tur avvist.');
+  };
+
+  const handleDeleteTripDirect = async (tripId: string) => {
+    if (!window.confirm('Er du sikker på at du vil slette denne bestillingen?')) return;
+    await deleteTrip(tripId);
+    toast.success('Bestilling slettet!');
+  };
+
+  const handleAdvanceTripStatus = async () => {
+    if (!activeTrip) return;
+
+    if (
+      activeTrip.status === 'driver_assigned' ||
+      activeTrip.status === 'accepted' ||
+      activeTrip.status === 'confirmed' ||
+      activeTrip.status === 'driver_arriving'
+    ) {
+      await updateTripStatus(activeTrip.id, 'driver_arrived');
+      toast.success('Markert som ankommet! Venter på passasjer.');
+      if (soundEnabled) soundService.playDriverArrivedSound(0.7);
+    } else if (activeTrip.status === 'driver_arrived') {
+      await updateTripStatus(activeTrip.id, 'trip_started');
+      toast.success('Turen er startet! God kjøretur.');
+      if (soundEnabled) soundService.playTripStartedSound(0.7);
+    } else if (activeTrip.status === 'trip_started' || activeTrip.status === 'active') {
+      await updateTripStatus(activeTrip.id, 'completed');
+      toast.success(`Turen er fullført! ${activeTrip.estimatedPrice} kr registrert.`);
+      if (soundEnabled) soundService.playTripCompletedSound(0.9);
     }
   };
 
-  const handleTriggerEmergency = async (reason?: string) => {
-    if (!currentDriver?.id) return;
-    setEmergencySending(true);
-    try {
-      await triggerEmergencyAlert(
-        currentDriver.id,
-        reason || 'Taus nødvarsel utløst fra sjåførkonsoll'
-      );
-      setEmergencySuccessMessage('Taus nødvarsel sendt til sentralen. Sanntids GPS-posisjon og turdetaljer deles.');
-      toast.error('🚨 Nødvarsel aktivert: Sentralen er varslet!', {
-        description: 'Din nøyaktige posisjon og turdetaljer spores nå i sanntid av sentralen.'
-      });
-      setTimeout(() => {
-        setShowEmergencyModal(false);
-        setEmergencySending(false);
-      }, 1500);
-    } catch (err: any) {
-      toast.error('Kunne ikke sende nødvarsel. Ring 112 om det er akutt fare.');
-      setEmergencySending(false);
-    }
-  };
-
-  // Launch external GPS navigation (Google Maps / Waze / Apple Maps)
-  const openExternalNavigation = (destAddress: string, lat?: number, lng?: number) => {
-    const query = lat && lng ? `${lat},${lng}` : encodeURIComponent(destAddress);
-    const googleUrl = `https://www.google.com/maps/dir/?api=1&destination=${query}`;
+  const handleOpenNavigation = (destinationAddress: string) => {
+    const encoded = encodeURIComponent(destinationAddress);
+    const googleUrl = `https://www.google.com/maps/dir/?api=1&destination=${encoded}`;
     window.open(googleUrl, '_blank');
   };
 
-  // Format waiting timer as MM:SS
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  const handleSendQuickSms = (text: string) => {
+    if (!activeTrip?.customerPhone) return;
+    const cleanPhone = activeTrip.customerPhone.replace(/\s+/g, '');
+    window.open(`sms:${cleanPhone}?body=${encodeURIComponent(text)}`, '_blank');
+    setShowSmsModal(false);
+    toast.success('SMS-klient åpnet!');
+  };
+
+  const handleTriggerEmergency = async () => {
+    if (!currentDriver) return;
+    await triggerEmergencyAlert(currentDriver.id, 'Nødalarm utløst av sjåfør fra Cockpit');
+    toast.error('🚨 NØDVARSEL SENDT TIL SENTRALEN MED DIN LIVE GPS-POSISJON!');
   };
 
   return (
-    <div className="min-h-screen bg-[#0A0E17] text-[#F8FAFC] flex flex-col select-none overflow-x-hidden">
+    <div className="relative h-screen w-screen overflow-hidden bg-[#10141E] text-white flex flex-col font-sans select-none">
       
-      {/* ========================================== */}
-      {/* BOLT DRIVER TOP HEADER BAR */}
-      {/* ========================================== */}
-      <header className="h-16 bg-[#111827]/95 border-b border-white/10 px-4 sm:px-6 flex items-center justify-between z-30 sticky top-0 backdrop-blur-xl">
+      {/* 1. TOP FLOATING APP BAR (Bolt Style) */}
+      <div className="absolute top-0 left-0 right-0 z-30 p-3 sm:p-4 flex items-center justify-between pointer-events-none">
         
-        {/* LEFT: PROFILE & MENU */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setDrawerOpen(true)}
-            className="p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 transition-all cursor-pointer"
-            aria-label="Åpne meny"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#34D186] to-[#1EA864] text-slate-950 font-black flex items-center justify-center text-xs shadow-md">
-              {currentDriver.name.split(' ').map((n) => n[0]).join('')}
-            </div>
-            <div className="hidden xs:block">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-black text-white">{currentDriver.name}</span>
-                <span className="flex items-center gap-0.5 text-[10px] font-bold text-amber-400 bg-amber-400/10 px-1.5 py-0.2 rounded-md">
-                  <Star className="w-2.5 h-2.5 fill-amber-400" />
-                  {currentDriver.rating ? currentDriver.rating.toFixed(2) : '4.98'}
-                </span>
-              </div>
-              <span className="text-[10px] font-mono text-slate-400">
-                {currentDriver.vehiclePlate || 'EK 98765'} · {currentDriver.permitNumber || 'Løyve OS 10597'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* CENTER: TODAY EARNINGS PILL */}
+        {/* Left: Hamburger Button */}
         <button
-          onClick={() => setActiveTab('earnings')}
-          className="px-3.5 py-1.5 rounded-full bg-[#182232] border border-white/10 hover:border-[#34D186]/50 text-xs font-black text-white flex items-center gap-2 transition-all cursor-pointer shadow-inner"
+          onClick={() => setIsDrawerOpen(true)}
+          className="w-12 h-12 rounded-full bg-[#151B28]/90 hover:bg-[#1C2538] backdrop-blur-md border border-white/10 text-white shadow-xl flex items-center justify-center pointer-events-auto cursor-pointer transition-transform active:scale-95"
+          title="Meny"
         >
-          <span className="text-[#34D186] font-extrabold">{currentDriver.todayEarnings || 0} kr</span>
-          <span className="text-[10px] text-slate-400 font-normal hidden sm:inline">• {myCompletedTrips.length} turer</span>
+          <Menu className="w-6 h-6" />
         </button>
 
-        {/* RIGHT: EMERGENCY SOS, SOUND, ONLINE/OFFLINE */}
-        <div className="flex items-center gap-2">
-          
-          {/* QUICK-ACCESS EMERGENCY SOS BUTTON */}
-          <button
-            onClick={() => setShowEmergencyModal(true)}
-            className={`px-3 py-2 rounded-2xl border font-black text-xs uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md cursor-pointer ${
-              myActiveAlert
-                ? 'bg-rose-600 text-white border-rose-400 animate-pulse ring-2 ring-rose-500/50'
-                : 'bg-rose-500/15 hover:bg-rose-500/25 border-rose-500/40 text-rose-300'
-            }`}
-            title="Nødvarsel / Taus alarm til sentralen"
-          >
-            <ShieldAlert className="w-4 h-4 text-rose-400" />
-            <span className="font-black text-[11px]">SOS</span>
-          </button>
+        {/* Center: Big Online/Offline Pill Button with Live Tactile Status */}
+        <button
+          onClick={handleToggleOnline}
+          className={`pointer-events-auto px-6 py-3 rounded-full font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2.5 shadow-2xl cursor-pointer active:scale-95 ${
+            currentDriver?.isOnline
+              ? 'bg-[#151B28]/95 hover:bg-[#1C2538] text-white border-2 border-emerald-500 shadow-emerald-500/20'
+              : 'bg-[#34D186] hover:bg-[#2EB875] text-slate-950 shadow-emerald-500/30 ring-4 ring-emerald-500/20'
+          }`}
+        >
+          {currentDriver?.isOnline ? (
+            <>
+              <span className="w-3 h-3 rounded-full bg-emerald-400 animate-ping" />
+              <span className="text-emerald-400">ONLINE (På vakt)</span>
+              <span className="w-px h-3 bg-white/20" />
+              <span className="text-[10px] font-mono text-slate-300">Gå Offline</span>
+            </>
+          ) : (
+            <>
+              <Zap className="w-4 h-4 fill-slate-950" />
+              <span>Gå Online Nå</span>
+            </>
+          )}
+        </button>
 
+        {/* Right: Sound & Safety Tool Stack */}
+        <div className="flex items-center gap-2 pointer-events-auto">
           <button
             onClick={() => {
-              const next = !soundEnabled;
-              setSoundEnabled(next);
-              if (next) soundService.playTripRequestChime(0.6);
+              setSoundEnabled(!soundEnabled);
+              toast.info(soundEnabled ? 'Lydvarsler deaktivert' : 'Lydvarsler aktivert 🔔');
             }}
-            className={`p-2 rounded-xl border transition-all ${
-              soundEnabled ? 'bg-white/5 border-white/10 text-slate-300' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
-            }`}
-            title={soundEnabled ? 'Lydvarsel på' : 'Lydvarsel av'}
+            className="w-10 h-10 rounded-full bg-[#151B28]/90 hover:bg-[#1C2538] backdrop-blur-md border border-white/10 text-slate-300 shadow-xl flex items-center justify-center cursor-pointer transition-transform active:scale-95"
+            title={soundEnabled ? 'Deaktiver lyd' : 'Aktiver lyd'}
           >
-            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            {soundEnabled ? <Volume2 className="w-4 h-4 text-emerald-400" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
           </button>
 
           <button
-            onClick={handleToggleOnline}
-            className={`px-4 sm:px-5 py-2 rounded-full font-black text-[11px] uppercase tracking-wider transition-all shadow-lg flex items-center gap-2 cursor-pointer ${
-              currentDriver.isOnline
-                ? 'bg-[#34D186] hover:bg-[#2EB875] text-slate-950 shadow-[#34D186]/30 ring-2 ring-[#34D186]/50'
-                : 'bg-[#182232] hover:bg-[#223046] text-slate-300 border border-white/15'
-            }`}
+            onClick={() => setShowSafetyModal(true)}
+            className="w-12 h-12 rounded-full bg-[#151B28]/90 hover:bg-[#1C2538] backdrop-blur-md border border-white/10 text-slate-200 shadow-xl flex items-center justify-center cursor-pointer relative transition-transform active:scale-95"
+            title="Sikkerhetsverktøy"
           >
-            <Power className="w-3.5 h-3.5" />
-            <span>{currentDriver.isOnline ? 'PÅ NETT' : 'FRAKOBLET'}</span>
+            <Shield className="w-6 h-6 text-slate-300" />
+            <span className="absolute top-2.5 right-2.5 w-2.5 h-2.5 rounded-full bg-amber-400 border border-[#151B28]" />
           </button>
         </div>
-      </header>
 
-      {/* ========================================== */}
-      {/* SLIDE-OVER DRAWER MENU (BOLT STYLE) */}
-      {/* ========================================== */}
-      {drawerOpen && (
-        <div className="fixed inset-0 z-50 flex">
-          <div
-            onClick={() => setDrawerOpen(false)}
-            className="fixed inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
-          />
+      </div>
 
-          <div className="relative w-80 max-w-full bg-[#111827] border-r border-white/10 h-full flex flex-col justify-between p-6 z-10 shadow-2xl">
-            <div className="space-y-6">
-              
-              {/* DRIVER INFO CARD */}
-              <div className="flex justify-between items-start pb-4 border-b border-white/10">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-[#34D186] text-slate-950 font-black flex items-center justify-center text-lg shadow-lg">
-                    {currentDriver.name[0]}
-                  </div>
-                  <div>
-                    <h3 className="font-black text-sm text-white">{currentDriver.name}</h3>
-                    <p className="text-[11px] text-slate-400">{currentDriver.email}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">
-                        ⭐ {currentDriver.rating?.toFixed(2) || '4.98'}
-                      </span>
-                      <span className="text-[10px] font-bold text-[#34D186] bg-[#34D186]/10 px-1.5 py-0.5 rounded">
-                        98% Aksept
-                      </span>
-                    </div>
-                  </div>
-                </div>
+      {/* MAIN VIEW CONTENT CONTAINER */}
+      <div className="flex-1 relative w-full h-full">
 
-                <button
-                  onClick={() => setDrawerOpen(false)}
-                  className="p-1.5 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* NAVIGATION MENU */}
-              <nav className="space-y-1.5">
-                {[
-                  { id: 'drive', label: 'Kjøring / Kart', icon: Navigation },
-                  { id: 'earnings', label: 'Inntekt & Oppgjør', icon: TrendingUp },
-                  { id: 'trips', label: `Turer & Historikk (${myCompletedTrips.length})`, icon: History },
-                  { id: 'hotspots', label: 'Etterspørsel / Varmekart', icon: Flame },
-                  { id: 'vehicle', label: 'Mitt Kjøretøy', icon: Car },
-                  { id: 'profile', label: 'Sjåførprofil & Løyve', icon: User },
-                  { id: 'settings', label: 'Innstillinger', icon: Settings }
-                ].map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeTab === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => {
-                        setActiveTab(item.id as any);
-                        setDrawerOpen(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-xs font-black transition-all cursor-pointer ${
-                        isActive
-                          ? 'bg-[#34D186] text-slate-950 shadow-md'
-                          : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Icon className="w-4 h-4" />
-                        <span>{item.label}</span>
-                      </div>
-                      <ChevronRight className={`w-4 h-4 ${isActive ? 'text-slate-950' : 'text-slate-500'}`} />
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
-
-            {/* LOGOUT & APP VERSION */}
-            <div className="pt-4 border-t border-white/10 space-y-3">
-              <button
-                onClick={() => {
-                  setDrawerOpen(false);
-                  logout();
-                  navigate('/');
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-xs font-black text-rose-400 hover:bg-rose-500/10 transition-all cursor-pointer"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Logg ut av sjåførkonto</span>
-              </button>
-              <p className="text-[10px] text-slate-500 text-center font-mono">
-                Aron Taxi Bolt Driver v3.0 (Oslo)
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================== */}
-      {/* MAIN SCREEN BODY BASED ON TAB */}
-      {/* ========================================== */}
-      <main className="flex-1 relative flex flex-col">
-        
-        {/* TAB 1: LIVE DRIVE / MAP (BOLT DRIVER HOMESCREEN) */}
-        {activeTab === 'drive' && (
-          <div className="relative flex-1 w-full min-h-[calc(100vh-128px)] sm:min-h-[calc(100vh-64px)] flex flex-col">
+        {/* VIEW 1: HOME (MAP + BOLT FULLSCREEN COCKPIT OR BOTTOM SHEET) */}
+        {activeTab === 'home' && (
+          <div className="relative w-full h-full">
             
-            {/* FULL SCREEN INTERACTIVE LEAFLET MAP */}
+            {/* FULLSCREEN LEAFLET MAP */}
             <div className="absolute inset-0 z-0">
               <LeafletMap
-                pickup={activeTrip?.pickup || pendingTrips[0]?.pickup}
-                destination={activeTrip?.destination || pendingTrips[0]?.destination}
-                driverLocation={currentDriver.currentLocation}
-                routeGeometry={activeTrip?.routeGeometry || pendingTrips[0]?.routeGeometry}
-                hotspots={OSLO_HOTSPOTS}
-                showHotspots={showHotspots}
-                centerLat={currentDriver.currentLocation?.lat || 59.9139}
-                centerLng={currentDriver.currentLocation?.lng || 10.7522}
-                zoom={13}
-                className="w-full h-full"
+                interactive={true}
+                pickup={
+                  activeTrip
+                    ? {
+                        address: activeTrip.pickup.address,
+                        lat: activeTrip.pickup.lat,
+                        lng: activeTrip.pickup.lng,
+                      }
+                    : currentDriver?.currentLocation
+                    ? {
+                        address: 'Min posisjon',
+                        lat: currentDriver.currentLocation.lat,
+                        lng: currentDriver.currentLocation.lng,
+                      }
+                    : undefined
+                }
+                destination={
+                  activeTrip
+                    ? {
+                        address: activeTrip.destination.address,
+                        lat: activeTrip.destination.lat,
+                        lng: activeTrip.destination.lng,
+                      }
+                    : undefined
+                }
               />
             </div>
 
-            {/* FLOATING QUICK CONTROLS (TOP RIGHT ON MAP) */}
-            <div className="absolute top-4 right-4 z-20 flex flex-col gap-2">
-              
-              {/* QUICK-ACCESS EMERGENCY SOS BUTTON */}
-              <button
-                onClick={() => setShowEmergencyModal(true)}
-                className={`p-3 rounded-2xl border shadow-2xl backdrop-blur-md transition-all cursor-pointer ${
-                  myActiveAlert
-                    ? 'bg-rose-600 text-white border-rose-400 animate-pulse ring-4 ring-rose-500/40'
-                    : 'bg-rose-500/20 hover:bg-rose-500/30 border-rose-500/40 text-rose-400'
-                }`}
-                title="Send Nødvarsel / SOS til Sentralen"
-              >
-                <ShieldAlert className="w-5 h-5 text-rose-400" />
-              </button>
-
-              {/* HOTSPOTS TOGGLE */}
-              <button
-                onClick={() => setShowHotspots(!showHotspots)}
-                className={`p-3 rounded-2xl border shadow-xl backdrop-blur-md transition-all cursor-pointer ${
-                  showHotspots ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold' : 'bg-[#111827]/90 text-slate-300 border-white/10'
-                }`}
-                title="Varmekart / Etterspørsel"
-              >
-                <Flame className="w-5 h-5" />
-              </button>
-
-              {/* AUTO-ACCEPT TOGGLE */}
-              <button
-                onClick={() => {
-                  const next = !autoAccept;
-                  setAutoAccept(next);
-                  toast.info(next ? '⚡ Auto-godta turer aktivert' : 'Auto-godta deaktivert');
-                }}
-                className={`p-3 rounded-2xl border shadow-xl backdrop-blur-md transition-all cursor-pointer ${
-                  autoAccept ? 'bg-[#34D186] text-slate-950 border-[#34D186]' : 'bg-[#111827]/90 text-slate-300 border-white/10'
-                }`}
-                title={autoAccept ? 'Auto-aksept: PÅ' : 'Auto-aksept: AV'}
-              >
-                <Zap className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* FLOATING TOP STATUS BANNER */}
-            <div className="absolute top-4 left-4 right-16 sm:right-auto sm:w-96 z-20">
-              {!currentDriver.isOnline ? (
-                <div className="bg-[#111827]/95 border border-amber-500/40 rounded-3xl p-4 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-2xl bg-amber-500/15 flex items-center justify-center text-amber-400 shrink-0">
-                      <Power className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-black text-white">Du er Frakoblet</p>
-                      <p className="text-[10px] text-slate-400">Gå på nett for å motta turer</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleToggleOnline}
-                    className="px-4 py-2 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg cursor-pointer"
-                  >
-                    Gå På Nett
-                  </button>
-                </div>
-              ) : !activeTrip ? (
-                <div className="bg-[#111827]/95 border border-[#34D186]/40 rounded-3xl p-3.5 shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <div className="w-3 h-3 rounded-full bg-[#34D186] animate-ping absolute inset-0" />
-                      <div className="w-3 h-3 rounded-full bg-[#34D186] relative" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-black text-white">🟢 Søker etter turer...</p>
-                      <p className="text-[10px] text-[#34D186]">Høy etterspørsel i Oslo Sentrum</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-slate-400">{pendingTrips.length} i kø</span>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            {/* ========================================== */}
-            {/* BOTTOM FLOATING LAYER: ACTIVE TRIP OR INCOMING RIDE */}
-            {/* ========================================== */}
-            <div className="mt-auto p-3 sm:p-6 z-20 max-w-lg w-full mx-auto space-y-3 pb-20 sm:pb-6">
-              
-              {/* CASE A: ACTIVE TRIP IN PROGRESS (BOLT 4-STEP STATE MACHINE) */}
-              {activeTrip ? (
-                <div className="bg-[#111827]/98 border-2 border-[#34D186] rounded-3xl p-5 shadow-2xl backdrop-blur-2xl space-y-4">
+            {/* FULLSCREEN ONLINE HUD COCKPIT BAR (When Online & No Active Trip) */}
+            {currentDriver?.isOnline && !activeTrip && (
+              <div className="absolute top-20 inset-x-3 sm:inset-x-6 z-20 max-w-lg mx-auto pointer-events-auto animate-in slide-in-from-top duration-300">
+                <div className="bg-[#121722]/95 backdrop-blur-xl border border-emerald-500/40 rounded-3xl p-3.5 shadow-2xl space-y-3">
                   
-                  {/* STEP INDICATOR HEADER */}
-                  <div className="flex justify-between items-center pb-3 border-b border-white/10">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-[#34D186] animate-pulse" />
-                      <span className="text-xs font-black tracking-wider text-[#34D186] uppercase">
-                        {(activeTrip.status === 'driver_assigned' || activeTrip.status === 'accepted' || activeTrip.status === 'driver_arriving') && '1. KJØR TIL HENTESTED'}
-                        {activeTrip.status === 'driver_arrived' && '2. VENTER PÅ PASSASJER'}
-                        {(activeTrip.status === 'trip_started' || activeTrip.status === 'active') && '3. TUR PÅGÅR TIL DESTINASJON'}
+                  {/* Radar Pulse / Search Status */}
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="relative flex items-center justify-center">
+                        <span className="w-3 h-3 rounded-full bg-emerald-400 animate-ping absolute" />
+                        <Radio className="w-4 h-4 text-emerald-400 relative z-10" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <span>Søker etter turer i Oslo</span>
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {currentVehicle?.model || 'Tesla Model Y'} • Klar for oppdrag
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-400 font-mono block">Tid på vakt</span>
+                      <span className="text-xs font-black font-mono text-emerald-400">
+                        {formatOnlineDuration(onlineSeconds)}
                       </span>
                     </div>
-                    <span className="font-mono font-bold text-xs text-slate-300">
-                      {activeTrip.id}
-                    </span>
                   </div>
 
-                  {/* PASSENGER & ROUTE DETAILS */}
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center bg-black/40 p-3 rounded-2xl border border-white/5">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-[#34D186]/15 border border-[#34D186]/40 flex items-center justify-center text-[#34D186] font-black text-sm">
-                          {activeTrip.customerName?.[0] || 'P'}
-                        </div>
-                        <div>
-                          <p className="text-xs font-black text-white">{activeTrip.customerName || 'Passasjer'}</p>
-                          <p className="text-[10px] text-slate-400">{activeTrip.passengers || 1} passasjerer · {activeTrip.luggage || 0} kolli</p>
-                        </div>
-                      </div>
-
-                      {/* CALL & SMS BUTTONS */}
-                      <div className="flex gap-2">
-                        {activeTrip.customerPhone && (
-                          <a
-                            href={`tel:${activeTrip.customerPhone}`}
-                            className="p-2.5 bg-[#34D186] text-slate-950 rounded-xl font-bold flex items-center justify-center shadow-md hover:bg-[#2EB875]"
-                            title="Ring kunde"
-                          >
-                            <Phone className="w-4 h-4" />
-                          </a>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* ROUTE BOX */}
-                    <div className="p-3.5 bg-black/50 rounded-2xl border border-white/5 space-y-2.5 text-xs">
-                      <div className="flex items-start gap-2.5">
-                        <MapPin className="w-4 h-4 text-[#34D186] shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                          <span className="text-[9px] uppercase font-black text-slate-500 block">Hentested</span>
-                          <span className="text-white font-bold leading-tight">{activeTrip.pickup?.address || 'Henteadresse'}</span>
-                        </div>
-                        {(activeTrip.status === 'driver_assigned' || activeTrip.status === 'accepted' || activeTrip.status === 'driver_arriving') && (
-                          <button
-                            onClick={() => openExternalNavigation(activeTrip.pickup?.address || '', activeTrip.pickup?.lat, activeTrip.pickup?.lng)}
-                            className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-[#34D186] text-[10px] font-bold rounded-lg flex items-center gap-1 shrink-0 cursor-pointer"
-                          >
-                            <Navigation className="w-3 h-3" />
-                            GPS
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="flex items-start gap-2.5 pt-2 border-t border-white/5">
-                        <Navigation className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                        <div className="flex-1">
-                          <span className="text-[9px] uppercase font-black text-slate-500 block">Destinasjon</span>
-                          <span className="text-white font-bold leading-tight">{activeTrip.destination?.address || 'Destinasjonsadresse'}</span>
-                        </div>
-                        {(activeTrip.status === 'trip_started' || activeTrip.status === 'active') && (
-                          <button
-                            onClick={() => openExternalNavigation(activeTrip.destination?.address || '', activeTrip.destination?.lat, activeTrip.destination?.lng)}
-                            className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-[#34D186] text-[10px] font-bold rounded-lg flex items-center gap-1 shrink-0 cursor-pointer"
-                          >
-                            <Navigation className="w-3 h-3" />
-                            GPS
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* FINANCIALS & DISTANCE */}
-                    <div className="flex justify-between items-center text-xs px-2 py-1 bg-[#182232] rounded-xl">
-                      <span className="text-slate-400">Avstand: <strong className="text-white">{activeTrip.distanceKm} km</strong></span>
-                      <span className="text-slate-400">Pris: <strong className="text-[#34D186] font-mono text-sm">{activeTrip.estimatedPrice} kr</strong></span>
-                      <span className="text-slate-400">Din andel (85%): <strong className="text-[#34D186]">{Math.round(activeTrip.estimatedPrice * 0.85)} kr</strong></span>
-                    </div>
-
-                    {/* WAITING TIMER IN STEP 2 */}
-                    {activeTrip.status === 'driver_arrived' && (
-                      <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-amber-400 animate-spin" />
-                          <span className="text-amber-300 font-bold">Ventetid på kunde:</span>
-                        </div>
-                        <span className="font-mono text-sm font-black text-amber-400">
-                          {formatTime(waitingSeconds)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ACTIVE ACTION BUTTONS */}
-                  <div className="pt-1">
-                    {(activeTrip.status === 'driver_assigned' || activeTrip.status === 'accepted' || activeTrip.status === 'driver_arriving') && (
-                      <button
-                        onClick={() => handleArrivedAtPickup(activeTrip.id)}
-                        className="w-full py-4 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black uppercase text-xs tracking-wider rounded-2xl shadow-xl flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <CheckCircle2 className="w-5 h-5" />
-                        Jeg Har Ankommet Hentested
-                      </button>
-                    )}
-
-                    {activeTrip.status === 'driver_arrived' && (
-                      <button
-                        onClick={() => handleStartTrip(activeTrip.id)}
-                        className="w-full py-4 bg-gradient-to-r from-[#34D186] to-emerald-400 hover:brightness-110 text-slate-950 font-black uppercase text-xs tracking-wider rounded-2xl shadow-xl flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <Navigation className="w-5 h-5" />
-                        Start Tur Med Passasjer
-                      </button>
-                    )}
-
-                    {(activeTrip.status === 'trip_started' || activeTrip.status === 'active') && (
-                      <button
-                        onClick={() => handleCompleteTrip(activeTrip)}
-                        className="w-full py-4 bg-gradient-to-r from-emerald-400 via-[#34D186] to-teal-400 hover:brightness-110 text-slate-950 font-black uppercase text-xs tracking-wider rounded-2xl shadow-xl flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <CheckCircle2 className="w-5 h-5" />
-                        Fullfør Tur & Registrer Oppgjør
-                      </button>
-                    )}
-                  </div>
-
-                </div>
-              ) : (
-                /* CASE B: INCOMING RIDE REQUEST POPUP (BOLT STYLE MODAL) */
-                currentDriver.isOnline && pendingTrips.length > 0 && (
-                  <div className="bg-[#111827]/98 border-2 border-[#34D186] rounded-3xl p-5 shadow-2xl backdrop-blur-2xl space-y-4 animate-slide-up">
-                    
-                    {/* COUNTDOWN PROGRESS BAR */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between items-center text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-0.5 bg-[#34D186] text-slate-950 rounded-full font-black text-[10px] uppercase animate-pulse">
-                            NY FORESPØRSEL
-                          </span>
-                          <span className="font-mono text-slate-400 text-[11px]">{pendingTrips[0].id}</span>
-                        </div>
-                        <span className="font-mono font-bold text-amber-400 text-xs">
-                          {incomingCountdown}s gjenstår
-                        </span>
-                      </div>
-
-                      <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-[#34D186] transition-all duration-1000"
-                          style={{ width: `${(incomingCountdown / 15) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* BIG FARE & EARNINGS */}
-                    <div className="flex justify-between items-end bg-black/40 p-3.5 rounded-2xl border border-white/5">
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Totalpris</span>
-                        <span className="text-2xl font-black text-white">{pendingTrips[0].estimatedPrice} kr</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[10px] uppercase font-bold text-[#34D186] block">Din Nettofortjeneste (85%)</span>
-                        <span className="text-xl font-black text-[#34D186]">
-                          {Math.round(pendingTrips[0].estimatedPrice * 0.85)} kr
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* ROUTE PREVIEW */}
-                    <div className="space-y-2 text-xs bg-black/30 p-3.5 rounded-2xl border border-white/5">
-                      <div className="flex items-start gap-2.5">
-                        <MapPin className="w-4 h-4 text-[#34D186] shrink-0 mt-0.5" />
-                        <div>
-                          <span className="text-[9px] uppercase font-bold text-slate-500 block">Hentested</span>
-                          <p className="text-white font-bold leading-tight">{pendingTrips[0]?.pickup?.address || 'Henteadresse'}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-2.5 pt-2 border-t border-white/5">
-                        <Navigation className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                        <div>
-                          <span className="text-[9px] uppercase font-bold text-slate-500 block">Destinasjon</span>
-                          <p className="text-white font-bold leading-tight">{pendingTrips[0]?.destination?.address || 'Destinasjonsadresse'}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* TRIP METRICS */}
-                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                      <div className="p-2 bg-white/5 rounded-xl">
-                        <span className="text-[10px] text-slate-400 block">Avstand</span>
-                        <span className="font-bold text-white">{pendingTrips[0].distanceKm} km</span>
-                      </div>
-                      <div className="p-2 bg-white/5 rounded-xl">
-                        <span className="text-[10px] text-slate-400 block">Kjøretid</span>
-                        <span className="font-bold text-white">{pendingTrips[0].durationMinutes} min</span>
-                      </div>
-                      <div className="p-2 bg-white/5 rounded-xl">
-                        <span className="text-[10px] text-slate-400 block">Passasjer</span>
-                        <span className="font-bold text-white">{pendingTrips[0].passengers} pers</span>
-                      </div>
-                    </div>
-
-                    {/* ACCEPT / DECLINE BUTTONS */}
-                    <div className="flex gap-3 pt-1">
-                      <button
-                        onClick={() => handleAcceptTrip(pendingTrips[0].id)}
-                        className="flex-1 py-4 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black uppercase text-xs tracking-wider rounded-2xl shadow-xl flex items-center justify-center gap-2 cursor-pointer transition-all"
-                      >
-                        <Check className="w-5 h-5" />
-                        GODTA TUR
-                      </button>
-                      <button
-                        onClick={() => handleRejectTrip(pendingTrips[0].id)}
-                        className="px-6 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 font-bold text-xs uppercase rounded-2xl cursor-pointer"
-                      >
-                        Avslå
-                      </button>
-                    </div>
-
-                  </div>
-                )
-              )}
-
-            </div>
-
-          </div>
-        )}
-
-        {/* TAB 2: INNTEKT & OPPGJØR (EARNINGS & REVENUE) */}
-        {activeTab === 'earnings' && (
-          <div className="p-4 sm:p-8 max-w-4xl w-full mx-auto space-y-6 pb-24">
-            <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-white">Inntekt & Oppgjør</h1>
-                <p className="text-xs text-slate-400">
-                  85% sjåførutbetaling · 100% tips rett til din konto
-                </p>
-              </div>
-              <button
-                onClick={() => setActiveTab('drive')}
-                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs font-bold text-[#34D186]"
-              >
-                Tilbake til Kart
-              </button>
-            </div>
-
-            {/* REVENUE CARDS */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-[#111827] border border-white/10 rounded-3xl p-6 space-y-2">
-                <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider">I Dag</span>
-                <h2 className="text-3xl font-black text-[#34D186]">{currentDriver.todayEarnings || 0} kr</h2>
-                <p className="text-[11px] text-slate-400">{myCompletedTrips.length} fullførte turer</p>
-              </div>
-
-              <div className="bg-[#111827] border border-white/10 rounded-3xl p-6 space-y-2">
-                <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Denne Uken</span>
-                <h2 className="text-3xl font-black text-white">{currentDriver.weekEarnings || 0} kr</h2>
-                <p className="text-[11px] text-slate-400">Automatisk bankutbetaling hver mandag</p>
-              </div>
-
-              <div className="bg-[#111827] border border-white/10 rounded-3xl p-6 space-y-2">
-                <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider">Mottatt Drikkepenger</span>
-                <h2 className="text-3xl font-black text-emerald-400">{currentDriver.tips || 0} kr</h2>
-                <p className="text-[11px] text-slate-400">0% provisjon på drikkepenger</p>
-              </div>
-            </div>
-
-            {/* 85% PROVISJONSMODELL */}
-            <div className="bg-[#111827] border border-white/10 rounded-3xl p-6 space-y-3">
-              <div className="flex items-center gap-2 text-[#34D186]">
-                <Percent className="w-5 h-5" />
-                <h3 className="text-sm font-black uppercase tracking-wider text-white">Gjennomsiktig Provisjonsmodell</h3>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Hos Aron Taxi beholder sjåføren <strong>85% av brutto taksameterbeløp</strong> på alle turer, mens 15% går til administrasjon, kundestøtte og appdrift. Alle tips utbetales 100% uavkortet til sjåføren.
-              </p>
-            </div>
-
-            {/* BONUS CAMPAIGNS */}
-            <div className="bg-gradient-to-br from-[#111827] to-[#182638] border border-[#34D186]/30 rounded-3xl p-6 space-y-4">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2 text-[#34D186]">
-                  <Sparkles className="w-5 h-5" />
-                  <h3 className="text-sm font-black uppercase text-white">Aktive Sjåførbonuser</h3>
-                </div>
-                <span className="px-3 py-1 bg-[#34D186]/20 text-[#34D186] text-[10px] font-black rounded-full">
-                  AKTIV
-                </span>
-              </div>
-              <div className="p-4 bg-black/40 rounded-2xl border border-white/5 flex justify-between items-center">
-                <div>
-                  <h4 className="text-xs font-bold text-white">Helge-rushet i Oslo</h4>
-                  <p className="text-[11px] text-slate-400">Kjør 8 turer mellom 20:00 og 04:00 for ekstra bonus</p>
-                </div>
-                <span className="text-sm font-black text-[#34D186]">+350 kr</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: TURER & HISTORIKK (TRIP HISTORY & AVAILABLE POOL) */}
-        {activeTab === 'trips' && (
-          <div className="p-4 sm:p-8 max-w-4xl w-full mx-auto space-y-6 pb-24">
-            <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-white">Turoversikt</h1>
-                <p className="text-xs text-slate-400">
-                  {pendingTrips.length} ledige i pool · {myCompletedTrips.length} fullførte oppdrag
-                </p>
-              </div>
-              <button
-                onClick={() => setActiveTab('drive')}
-                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs font-bold text-[#34D186]"
-              >
-                Tilbake til Kart
-              </button>
-            </div>
-
-            {/* SECTION 1: AVAILABLE POOL TRIPS */}
-            {pendingTrips.length > 0 && (
-              <div className="space-y-3">
-                <h3 className="text-xs font-black uppercase tracking-wider text-[#34D186]">
-                  Ledige Turer i Oslo ({pendingTrips.length})
-                </h3>
-                <div className="space-y-3">
-                  {pendingTrips.map((t) => (
-                    <div
-                      key={t.id}
-                      className="bg-[#111827] border border-[#34D186]/40 hover:border-[#34D186] rounded-3xl p-5 shadow-xl space-y-3 transition-all"
+                  {/* Day Summary Grid in Cockpit */}
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div 
+                      onClick={() => setShowEarningsView(true)}
+                      className="bg-[#171E2D] hover:bg-[#1D2638] rounded-2xl p-2 cursor-pointer transition-colors border border-white/5"
                     >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <span className="font-mono text-xs font-black text-[#34D186]">{t.id}</span>
-                          <p className="text-xs text-slate-300 font-bold mt-0.5">{t.customerName}</p>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-lg font-black text-white">{t.estimatedPrice} kr</span>
-                          <span className="block text-[10px] text-[#34D186]">85% netto: {Math.round(t.estimatedPrice * 0.85)} kr</span>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-black/40 p-3 rounded-2xl border border-white/5">
-                        <div>
-                          <span className="text-[9px] uppercase font-bold text-slate-500 block">Fra</span>
-                          <span className="text-slate-200 font-semibold">{t.pickup?.address || '–'}</span>
-                        </div>
-                        <div>
-                          <span className="text-[9px] uppercase font-bold text-slate-500 block">Til</span>
-                          <span className="text-slate-200 font-semibold">{t.destination?.address || '–'}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-between items-center pt-1">
-                        <span className="text-xs text-slate-400">{t.distanceKm} km · {t.durationMinutes} min</span>
-                        <button
-                          onClick={() => {
-                            handleAcceptTrip(t.id);
-                            setActiveTab('drive');
-                          }}
-                          className="px-5 py-2 bg-[#34D186] text-slate-950 font-black uppercase text-xs rounded-xl shadow-md hover:bg-[#2EB875]"
-                        >
-                          Godta Tur
-                        </button>
-                      </div>
+                      <span className="text-[10px] text-slate-400 block font-medium">Netto i dag</span>
+                      <span className="text-xs font-black text-white">kr {todayNet},00</span>
                     </div>
-                  ))}
+
+                    <div 
+                      onClick={() => setActiveTab('rides')}
+                      className="bg-[#171E2D] hover:bg-[#1D2638] rounded-2xl p-2 cursor-pointer transition-colors border border-white/5"
+                    >
+                      <span className="text-[10px] text-slate-400 block font-medium">Turer i dag</span>
+                      <span className="text-xs font-black text-emerald-400">{todayCompletedTrips.length} turer</span>
+                    </div>
+
+                    <div className="bg-[#171E2D] rounded-2xl p-2 border border-white/5">
+                      <span className="text-[10px] text-slate-400 block font-medium">Sjåførscore</span>
+                      <span className="text-xs font-black text-white">99%</span>
+                    </div>
+                  </div>
+
                 </div>
               </div>
             )}
 
-            {/* SECTION 2: COMPLETED TRIPS */}
-            <div className="space-y-3 pt-4">
-              <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
-                Fullførte Oppdrag ({myCompletedTrips.length})
-              </h3>
-              {myCompletedTrips.length === 0 ? (
-                <div className="bg-[#111827] border border-white/10 rounded-3xl p-12 text-center space-y-3">
-                  <History className="w-10 h-10 text-slate-600 mx-auto" />
-                  <p className="text-sm font-bold text-slate-300">Ingen fullførte turer ennå</p>
-                  <p className="text-xs text-slate-500">Når du fullfører oppdrag vil turkvitteringer vises her.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {myCompletedTrips.map((trip) => (
-                    <div
-                      key={trip.id}
-                      className="bg-[#111827] border border-white/10 rounded-3xl p-5 space-y-3"
-                    >
-                      <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                        <div>
-                          <span className="font-mono text-xs font-bold text-white">{trip.id}</span>
-                          <span className="text-[10px] text-slate-400 ml-2">
-                            {new Date(trip.completedAt || trip.updatedAt).toLocaleString('no-NO')}
-                          </span>
-                        </div>
-                        <span className="text-sm font-black text-[#34D186]">
-                          +{Math.round((trip.finalPrice || trip.estimatedPrice) * 0.85)} kr
-                        </span>
-                      </div>
-
-                      <div className="text-xs text-slate-300 space-y-1">
-                        <p><strong className="text-slate-400">Fra:</strong> {trip.pickup?.address || '–'}</p>
-                        <p><strong className="text-slate-400">Til:</strong> {trip.destination?.address || '–'}</p>
-                      </div>
-
-                      <div className="flex justify-between items-center text-[11px] text-slate-400 pt-2 border-t border-white/5">
-                        <span>Totalpris: {trip.finalPrice || trip.estimatedPrice} kr</span>
-                        <span>Tips: {trip.tip || 0} kr</span>
-                        <span>{trip.vehicleModel}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: ETTERSPØRSEL & VARMEKART (HOTSPOTS) */}
-        {activeTab === 'hotspots' && (
-          <div className="p-4 sm:p-8 max-w-4xl w-full mx-auto space-y-6 pb-24">
-            <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-white">Etterspørsel & Varmekart</h1>
-                <p className="text-xs text-slate-400">
-                  Områder med høy etterspørsel og surge-priser i Oslo
-                </p>
-              </div>
+            {/* FLOATING ACTION BUTTONS ON MAP (Above bottom controls) */}
+            <div className={`absolute left-4 right-4 z-20 flex justify-between items-end pointer-events-none transition-all duration-300 ${
+              currentDriver?.isOnline ? 'bottom-[90px]' : 'bottom-[240px] sm:bottom-[280px]'
+            }`}>
+              
+              {/* Bottom Left: Surge Heatmap Button */}
               <button
-                onClick={() => setActiveTab('drive')}
-                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs font-bold text-[#34D186]"
+                onClick={() => setShowSurgeModal(true)}
+                className="pointer-events-auto w-12 h-12 rounded-full bg-[#151B28]/90 hover:bg-[#1C2538] backdrop-blur-md border border-white/10 text-amber-400 shadow-xl flex items-center justify-center transition-transform active:scale-95 cursor-pointer"
+                title="Surge / Varmekart"
               >
-                Tilbake til Kart
+                <Flame className="w-6 h-6 fill-amber-400/20" />
               </button>
+
+              {/* Bottom Right Stack: Destination Mode, Preferences, GPS Recenter */}
+              <div className="flex flex-col gap-2.5 pointer-events-auto items-center">
+                
+                {/* Destination Mode Button */}
+                <button
+                  onClick={() => setShowDestinationModal(true)}
+                  className={`w-12 h-12 rounded-full backdrop-blur-md border shadow-xl flex items-center justify-center transition-transform active:scale-95 cursor-pointer ${
+                    activeDestination
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                      : 'bg-[#151B28]/90 hover:bg-[#1C2538] border-white/10 text-slate-200'
+                  }`}
+                  title="Destinasjonsmodus"
+                >
+                  <Navigation className="w-5 h-5" />
+                </button>
+
+                {/* Preferences Button */}
+                <button
+                  onClick={() => setShowPreferencesModal(true)}
+                  className="w-12 h-12 rounded-full bg-[#151B28]/90 hover:bg-[#1C2538] backdrop-blur-md border border-white/10 text-slate-200 shadow-xl flex items-center justify-center transition-transform active:scale-95 cursor-pointer"
+                  title="Sjåførpreferanser"
+                >
+                  <Sliders className="w-5 h-5" />
+                </button>
+
+                {/* Recenter GPS */}
+                <button
+                  onClick={() => toast.info('Kartet er sentrert på din posisjon i Oslo.')}
+                  className="w-12 h-12 rounded-full bg-[#151B28]/90 hover:bg-[#1C2538] backdrop-blur-md border border-white/10 text-emerald-400 shadow-xl flex items-center justify-center transition-transform active:scale-95 cursor-pointer"
+                  title="Sentrer på meg"
+                >
+                  <Crosshair className="w-5 h-5" />
+                </button>
+              </div>
+
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {OSLO_HOTSPOTS.map((h) => (
-                <div
-                  key={h.id}
-                  className="bg-[#111827] border border-white/10 hover:border-amber-500/50 rounded-3xl p-5 space-y-3 transition-all"
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-500 block">{h.category}</span>
-                      <h3 className="text-sm font-black text-white">{h.name}</h3>
+            {/* INCOMING RIDE REQUEST OVERLAY / MODAL */}
+            {currentDriver?.isOnline && !activeTrip && pendingTrips.length > 0 && (
+              <div className="absolute inset-x-3 bottom-[72px] sm:bottom-[80px] z-30 max-w-md mx-auto animate-in slide-in-from-bottom duration-300">
+                <div className="bg-[#121722] border-2 border-emerald-500 rounded-3xl p-5 shadow-2xl space-y-4">
+                  
+                  {/* Top Bar */}
+                  <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full bg-emerald-400 animate-ping" />
+                      <span className="text-xs font-black uppercase text-emerald-400 tracking-wider">
+                        Ny turforespørsel ({pendingTrips[0].vehicleCategory === 'airport_vip' ? 'Flyplass VIP' : 'Aron VIP'})
+                      </span>
                     </div>
-                    <span className="px-3 py-1 bg-amber-500/20 border border-amber-500/40 text-amber-400 font-mono font-black text-xs rounded-xl">
-                      {h.surge} SURGE
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleDeleteTripDirect(pendingTrips[0].id)}
+                        title="Slett testbestilling"
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <div className="px-3 py-1 bg-emerald-500/20 text-emerald-400 rounded-full font-mono font-black text-xs">
+                        {incomingCountdown}s
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="flex justify-between items-center text-xs text-slate-400 pt-2 border-t border-white/5">
-                    <span>Høy passasjerfrekvens</span>
+                  {/* Addresses */}
+                  <div className="space-y-2.5 text-xs">
+                    <div className="flex items-start gap-2.5">
+                      <MapPin className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase font-bold block">Henteadresse</span>
+                        <span className="text-white font-medium">{pendingTrips[0].pickup?.address}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2.5">
+                      <Navigation className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase font-bold block">Leveringsadresse</span>
+                        <span className="text-white font-medium">{pendingTrips[0].destination?.address}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Fare & Stats */}
+                  <div className="flex items-center justify-between bg-black/40 border border-white/10 rounded-2xl p-3.5">
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Din utbetaling (85%)</span>
+                      <span className="text-2xl font-black text-emerald-400">
+                        kr {Math.round(pendingTrips[0].estimatedPrice * 0.85)}
+                      </span>
+                      <span className="text-[10px] text-slate-500 ml-1">(Brutto {pendingTrips[0].estimatedPrice} kr)</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Avstand / Tid</span>
+                      <span className="text-xs font-bold text-slate-200">
+                        {pendingTrips[0].distanceKm} km · {pendingTrips[0].durationMinutes} min
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Buttons */}
+                  <div className="grid grid-cols-2 gap-3">
                     <button
-                      onClick={() => {
-                        openExternalNavigation(h.name, h.lat, h.lng);
-                      }}
-                      className="text-[#34D186] font-bold hover:underline flex items-center gap-1"
+                      onClick={() => handleRejectTrip(pendingTrips[0].id)}
+                      className="py-3.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 font-bold text-xs uppercase tracking-wider rounded-2xl border border-rose-500/30 transition-all cursor-pointer"
                     >
-                      <Navigation className="w-3 h-3" />
-                      Naviger dit
+                      Avslå
+                    </button>
+                    <button
+                      onClick={() => handleAcceptTrip(pendingTrips[0].id)}
+                      className="py-3.5 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-500/30 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      Godta tur ({incomingCountdown}s)
                     </button>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {/* TAB 5: KJØRETØY & DRIFT (VEHICLE & COMPLIANCE) */}
-        {activeTab === 'vehicle' && (
-          <div className="p-4 sm:p-8 max-w-4xl w-full mx-auto space-y-6 pb-24">
-            <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-white">Mitt Kjøretøy</h1>
-                <p className="text-xs text-slate-400">
-                  Aktiv drosjebil og løyvedetaljer
-                </p>
-              </div>
-              <button
-                onClick={() => setActiveTab('drive')}
-                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs font-bold text-[#34D186]"
-              >
-                Tilbake til Kart
-              </button>
-            </div>
-
-            <div className="space-y-6">
-              <div className="bg-[#111827] border border-white/10 rounded-3xl p-6 sm:p-8 space-y-6">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <div>
-                    <span className="text-[10px] font-black text-[#34D186] uppercase tracking-widest block">
-                      AKTIV BIL FOR VAKTEN
-                    </span>
-                    <h2 className="text-2xl font-black text-white">
-                      {currentDriver.vehicleName || 'Tesla Model Y Juniper'}
-                    </h2>
-                  </div>
-                  <span className="px-4 py-2 bg-black/60 border border-[#34D186]/30 font-mono text-sm font-black text-[#34D186] rounded-2xl">
-                    100% Elektrisk Drosje
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-white/10 text-xs">
-                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
-                    <span className="text-slate-400 block mb-1">Drosjeløyve</span>
-                    <span className="font-black text-white font-mono text-sm">{currentDriver.permitNumber || 'Registrert Løyve'}</span>
-                  </div>
-                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
-                    <span className="text-slate-400 block mb-1">Kjøreseddel</span>
-                    <span className="font-black text-white font-mono text-sm">{currentDriver.licenseNumber || 'Godkjent'}</span>
-                  </div>
-                  <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
-                    <span className="text-slate-400 block mb-1">Drivlinje</span>
-                    <span className="font-black text-[#34D186] text-sm">100% Elektrisk</span>
-                  </div>
                 </div>
               </div>
+            )}
 
-              {/* VEHICLE PICKER: EXACTLY 2 CARS */}
-              <div className="space-y-4">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">
-                  Velg Kjøretøy for Vakten (2 Biler i Flåten)
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {vehicles.map((v) => {
-                    const isSelected = currentDriver.vehicleName === v.model || currentDriver.vehicleId === v.id;
-                    return (
-                      <div
-                        key={v.id}
-                        onClick={async () => {
-                          await selectDriverVehicle(currentDriver.id, v.id);
-                          toast.success(`Valgt: ${v.model}`);
-                        }}
-                        className={`p-5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between space-y-4 ${
-                          isSelected
-                            ? 'bg-[#182638] border-[#34D186] shadow-lg shadow-[#34D186]/10'
-                            : 'bg-[#111827] border-white/10 hover:border-white/30'
-                        }`}
+            {/* ACTIVE TRIP CONSOLE OVERLAY */}
+            {activeTrip && (
+              <div className="absolute inset-x-3 bottom-[72px] sm:bottom-[80px] z-30 max-w-md mx-auto animate-in slide-in-from-bottom duration-300">
+                <div className="bg-[#121722] border-2 border-emerald-500 rounded-3xl p-5 shadow-2xl space-y-4">
+                  
+                  {/* Header */}
+                  <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 rounded-full text-[10px] font-black uppercase tracking-wider">
+                        Aktiv tur
+                      </span>
+                      <span className="text-xs text-slate-400 font-mono">#{activeTrip.id.slice(-6)}</span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {activeTrip.status === 'driver_arrived' && (
+                        <span className="text-xs font-mono text-amber-400 font-bold flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5" />
+                          Venter: {Math.floor(waitingSeconds / 60)}:{(waitingSeconds % 60).toString().padStart(2, '0')}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => handleDeleteTripDirect(activeTrip.id)}
+                        title="Avbryt/slett denne turen"
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400"
                       >
-                        <div className="space-y-2">
-                          <div className="h-32 rounded-xl overflow-hidden bg-black/40">
-                            <img src={v.imageUrls[0]} alt={v.model} className="w-full h-full object-cover" />
-                          </div>
-                          <div className="flex justify-between items-start pt-2">
-                            <h4 className="font-bold text-white text-base">{v.model}</h4>
-                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-white/10 text-slate-300">
-                              {v.fuelType}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-400 font-light">
-                            {v.seats} seter · {v.rangeKm} km rekkevidde
-                          </p>
-                        </div>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
 
-                        <button
-                          className={`w-full py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${
-                            isSelected
-                              ? 'bg-[#34D186] text-slate-950'
-                              : 'bg-white/10 text-white hover:bg-white/20'
-                          }`}
-                        >
-                          {isSelected ? '✓ Valgt som aktiv bil' : 'Velg denne bilen'}
-                        </button>
+                  {/* Step status */}
+                  <div className="grid grid-cols-3 gap-1.5 text-center">
+                    <div className={`p-2 rounded-xl text-[11px] font-bold ${
+                      activeTrip.status === 'driver_assigned' || activeTrip.status === 'accepted' || activeTrip.status === 'confirmed' || activeTrip.status === 'driver_arriving'
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'bg-white/5 text-slate-500'
+                    }`}>
+                      1. På vei
+                    </div>
+                    <div className={`p-2 rounded-xl text-[11px] font-bold ${
+                      activeTrip.status === 'driver_arrived'
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'bg-white/5 text-slate-500'
+                    }`}>
+                      2. Ankommet
+                    </div>
+                    <div className={`p-2 rounded-xl text-[11px] font-bold ${
+                      activeTrip.status === 'trip_started' || activeTrip.status === 'active'
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'bg-white/5 text-slate-500'
+                    }`}>
+                      3. Kjører
+                    </div>
+                  </div>
+
+                  {/* Route */}
+                  <div className="bg-black/40 border border-white/10 rounded-2xl p-3 space-y-2 text-xs">
+                    <div className="flex items-start gap-2.5">
+                      <MapPin className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase font-bold block">Henting</span>
+                        <span className="text-white font-medium">{activeTrip.pickup?.address}</span>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+                    </div>
+                    <div className="flex items-start gap-2.5">
+                      <Navigation className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase font-bold block">Levering</span>
+                        <span className="text-white font-medium">{activeTrip.destination?.address}</span>
+                      </div>
+                    </div>
+                  </div>
 
-        {/* TAB 6: SJÅFØRPROFIL */}
-        {activeTab === 'profile' && (
-          <div className="p-4 sm:p-8 max-w-4xl w-full mx-auto space-y-6 pb-24">
-            <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-white">Sjåførprofil</h1>
-                <p className="text-xs text-slate-400">
-                  Offisielle kontoopplysninger og drosjesertifisering
-                </p>
-              </div>
-              <button
-                onClick={() => setActiveTab('drive')}
-                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs font-bold text-[#34D186]"
-              >
-                Tilbake til Kart
-              </button>
-            </div>
+                  {/* Passenger row */}
+                  <div className="flex items-center justify-between gap-2 bg-[#171E2D] border border-white/10 rounded-2xl p-3">
+                    <div className="text-xs">
+                      <div className="font-bold text-white">{activeTrip.customerName || 'Passasjer'}</div>
+                      <div className="text-[11px] text-slate-400 font-mono">{activeTrip.customerPhone || 'Tlf registrert'}</div>
+                    </div>
 
-            <div className="bg-[#111827] border border-white/10 rounded-3xl p-6 sm:p-8 space-y-4 text-xs">
-              <div className="flex justify-between py-2 border-b border-white/5">
-                <span className="text-slate-400">Fullt Navn:</span>
-                <span className="font-bold text-white">{currentDriver.name}</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-white/5">
-                <span className="text-slate-400">E-post:</span>
-                <span className="font-semibold text-white">{currentDriver.email}</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-white/5">
-                <span className="text-slate-400">Telefon:</span>
-                <span className="font-semibold text-white">{currentDriver.phone}</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-white/5">
-                <span className="text-slate-400">Sjåfør ID:</span>
-                <span className="font-mono text-white">{currentDriver.id}</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-white/5">
-                <span className="text-slate-400">Drosjeløyve:</span>
-                <span className="font-mono font-bold text-[#34D186]">{currentDriver.permitNumber || 'Registrert Løyve'}</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-white/5">
-                <span className="text-slate-400">Kjøreseddel Gyldighet:</span>
-                <span className="font-bold text-emerald-400">Godkjent Drosjesjåfør</span>
-              </div>
-            </div>
-          </div>
-        )}
+                    <div className="flex items-center gap-2">
+                      {activeTrip.customerPhone && (
+                        <a
+                          href={`tel:${activeTrip.customerPhone}`}
+                          className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
+                          title="Ring passasjer"
+                        >
+                          <Phone className="w-4 h-4" />
+                        </a>
+                      )}
+                      <button
+                        onClick={() => setShowSmsModal(true)}
+                        className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/40"
+                        title="Send SMS"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() =>
+                          handleOpenNavigation(
+                            activeTrip.status === 'trip_started' || activeTrip.status === 'active'
+                              ? activeTrip.destination.address
+                              : activeTrip.pickup.address
+                          )
+                        }
+                        className="p-2.5 rounded-xl bg-[#34D186] text-slate-950 font-bold text-xs flex items-center gap-1"
+                        title="Start GPS"
+                      >
+                        <Navigation className="w-4 h-4" />
+                        <span>GPS</span>
+                      </button>
+                    </div>
+                  </div>
 
-        {/* TAB 7: INNSTILLINGER */}
-        {activeTab === 'settings' && (
-          <div className="p-4 sm:p-8 max-w-4xl w-full mx-auto space-y-6 pb-24">
-            <div className="flex justify-between items-center">
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-black text-white">Innstillinger</h1>
-                <p className="text-xs text-slate-400">
-                  Bolt Driver preferanser og navigasjonsvalg
-                </p>
-              </div>
-              <button
-                onClick={() => setActiveTab('drive')}
-                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-xs font-bold text-[#34D186]"
-              >
-                Tilbake til Kart
-              </button>
-            </div>
-
-            <div className="bg-[#111827] border border-white/10 rounded-3xl p-6 space-y-4">
-              <div className="flex justify-between items-center py-3 border-b border-white/5">
-                <div>
-                  <h4 className="text-xs font-bold text-white">Lydvarsel ved nye turer</h4>
-                  <p className="text-[11px] text-slate-400">Spiller av taksilyd når nye turoppdrag mottas</p>
-                </div>
-                <button
-                  onClick={() => {
-                    const next = !soundEnabled;
-                    setSoundEnabled(next);
-                    if (next) soundService.playTripRequestChime(0.8);
-                  }}
-                  className={`p-2.5 rounded-xl border ${soundEnabled ? 'bg-[#34D186] text-slate-950 border-[#34D186]' : 'bg-white/5 text-slate-400 border-white/10'}`}
-                >
-                  {soundEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-                </button>
-              </div>
-
-              <div className="flex justify-between items-center py-3 border-b border-white/5">
-                <div>
-                  <h4 className="text-xs font-bold text-white">Auto-aksept modus</h4>
-                  <p className="text-[11px] text-slate-400">Godtar innkommende turer automatisk</p>
-                </div>
-                <button
-                  onClick={() => setAutoAccept(!autoAccept)}
-                  className={`px-4 py-2 rounded-xl text-xs font-black uppercase ${autoAccept ? 'bg-[#34D186] text-slate-950' : 'bg-white/5 text-slate-400'}`}
-                >
-                  {autoAccept ? 'PÅ' : 'AV'}
-                </button>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  onClick={() => soundService.playTripRequestChime(0.85)}
-                  className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold rounded-xl text-slate-300"
-                >
-                  Test Lydsignal
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-      </main>
-
-      {/* ========================================== */}
-      {/* BOLT BOTTOM TAB BAR (MOBILE & DESKTOP STICKY) */}
-      {/* ========================================== */}
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-[#111827]/98 border-t border-white/10 px-4 flex items-center justify-around z-40 backdrop-blur-xl">
-        {[
-          { id: 'drive', label: 'Kjøring', icon: Navigation },
-          { id: 'earnings', label: 'Inntekt', icon: TrendingUp },
-          { id: 'trips', label: 'Turer', icon: History, badge: pendingTrips.length > 0 ? pendingTrips.length : undefined },
-          { id: 'hotspots', label: 'Varmekart', icon: Flame },
-          { id: 'vehicle', label: 'Bil & Profil', icon: Car }
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex flex-col items-center justify-center gap-1 py-1 px-3 rounded-xl transition-all cursor-pointer relative ${
-                isActive ? 'text-[#34D186]' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Icon className="w-5 h-5" />
-              <span className="text-[10px] font-black uppercase tracking-wider">{tab.label}</span>
-              {tab.badge && (
-                <span className="absolute -top-1 right-2 px-1.5 py-0.2 bg-[#34D186] text-slate-950 font-black text-[9px] rounded-full animate-bounce">
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* ========================================== */}
-      {/* POST-TRIP SUMMARY & PASSENGER RATING MODAL */}
-      {/* ========================================== */}
-      {activeTripSummary && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="bg-[#111827] border-2 border-[#34D186] rounded-3xl p-6 sm:p-8 max-w-md w-full text-center space-y-5 shadow-2xl animate-scale-up">
-            
-            <div className="w-16 h-16 bg-[#34D186]/20 border border-[#34D186]/40 rounded-full flex items-center justify-center mx-auto text-[#34D186]">
-              <CheckCircle2 className="w-8 h-8" />
-            </div>
-
-            <div className="space-y-1">
-              <span className="text-[10px] font-black tracking-widest text-[#34D186] uppercase">
-                TUR FULLFØRT
-              </span>
-              <h2 className="text-2xl font-black text-white">
-                Oppgjør Registrert
-              </h2>
-            </div>
-
-            {/* RECEIPT BREAKDOWN */}
-            <div className="p-4 bg-black/50 rounded-2xl border border-white/5 space-y-2 text-xs text-left">
-              <div className="flex justify-between text-slate-400">
-                <span>Bruttopris:</span>
-                <span className="text-white font-bold">{activeTripSummary.finalPrice || activeTripSummary.estimatedPrice} kr</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Din Andel (85%):</span>
-                <span className="text-[#34D186] font-black text-sm">
-                  {Math.round((activeTripSummary.finalPrice || activeTripSummary.estimatedPrice) * 0.85)} kr
-                </span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Aron Taxi gebyr (15%):</span>
-                <span className="text-slate-400">
-                  {Math.round((activeTripSummary.finalPrice || activeTripSummary.estimatedPrice) * 0.15)} kr
-                </span>
-              </div>
-            </div>
-
-            {/* RATE THE PASSENGER */}
-            <div className="space-y-2 text-left pt-2 border-t border-white/10">
-              <span className="text-[11px] font-bold text-slate-300 block text-center">
-                Gi vurdering til passasjer ({activeTripSummary.customerName})
-              </span>
-              <div className="flex justify-center gap-2">
-                {[1, 2, 3, 4, 5].map((star) => (
+                  {/* Advance Button */}
                   <button
-                    key={star}
-                    onClick={() => setPassengerRating(star)}
-                    className="p-1 cursor-pointer"
+                    onClick={handleAdvanceTripStatus}
+                    className="w-full py-4 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-500/30 transition-all cursor-pointer flex items-center justify-center gap-2"
                   >
-                    <Star
-                      className={`w-7 h-7 ${
-                        star <= passengerRating ? 'text-amber-400 fill-amber-400' : 'text-slate-600'
-                      }`}
-                    />
+                    <span>
+                      {activeTrip.status === 'driver_arrived'
+                        ? 'Start Turen Nå'
+                        : activeTrip.status === 'trip_started' || activeTrip.status === 'active'
+                        ? `Fullfør Tur (Motta ${activeTrip.estimatedPrice} kr)`
+                        : 'Marker som Ankommet Henteadresse'}
+                    </span>
                   </button>
-                ))}
-              </div>
-            </div>
 
-            <button
-              onClick={() => setActiveTripSummary(null)}
-              className="w-full py-4 bg-[#34D186] hover:bg-[#2EB875] text-slate-950 font-black uppercase text-xs rounded-2xl shadow-xl transition-all cursor-pointer"
-            >
-              Klar for Neste Tur
-            </button>
+                </div>
+              </div>
+            )}
+
+            {/* BOLT DRAGGABLE BOTTOM SHEET (Displayed ONLY when OFFLINE and no active trip) */}
+            {!currentDriver?.isOnline && !activeTrip && (
+              <div
+                className={`absolute inset-x-0 bottom-0 z-10 bg-[#121722] border-t border-white/10 rounded-t-[32px] shadow-2xl transition-all duration-300 pb-20 ${
+                  bottomSheetExpanded ? 'h-[75vh]' : 'h-[230px] sm:h-[260px]'
+                }`}
+              >
+                
+                {/* Drag handle */}
+                <div 
+                  onClick={() => setBottomSheetExpanded(!bottomSheetExpanded)}
+                  className="w-full py-3 flex items-center justify-center cursor-pointer group"
+                >
+                  <div className="w-12 h-1.5 bg-slate-700 group-hover:bg-slate-500 rounded-full transition-colors" />
+                </div>
+
+                {/* Content scroll area */}
+                <div className="px-4 sm:px-6 overflow-y-auto h-full space-y-3 pb-8">
+                  
+                  {/* Offline Call-to-action */}
+                  <div className="bg-[#171E2D] border border-white/10 rounded-2xl p-4 flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-bold text-white">Du er nå OFFLINE</div>
+                      <div className="text-xs text-slate-400">Gå online for å motta nye kjøreoppdrag i Oslo</div>
+                    </div>
+                    <button
+                      onClick={handleToggleOnline}
+                      className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl transition-all shadow-md cursor-pointer"
+                    >
+                      Gå Online
+                    </button>
+                  </div>
+
+                  {/* Action Cards Carousel */}
+                  <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-none">
+                    
+                    {/* Card 1: We've got your back */}
+                    <div
+                      onClick={() => setActiveTab('help')}
+                      className="min-w-[220px] bg-[#171E2D] hover:bg-[#1D2638] border border-white/10 rounded-2xl p-3.5 cursor-pointer transition-colors space-y-1.5 shrink-0"
+                    >
+                      <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                        <Shield className="w-4 h-4" />
+                      </div>
+                      <div className="text-xs font-bold text-white">Kundestøtte & Hjelp</div>
+                      <div className="text-[11px] text-slate-400 leading-snug">
+                        Få støtte og råd direkte fra sentralen
+                      </div>
+                    </div>
+
+                    {/* Card 2: Meet the new auto-accept */}
+                    <div
+                      onClick={() => setShowPreferencesModal(true)}
+                      className="min-w-[220px] bg-[#171E2D] hover:bg-[#1D2638] border border-white/10 rounded-2xl p-3.5 cursor-pointer transition-colors space-y-1.5 shrink-0"
+                    >
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                        <Zap className="w-4 h-4" />
+                      </div>
+                      <div className="text-xs font-bold text-white">Sjåførinnstillinger</div>
+                      <div className="text-[11px] text-slate-400 leading-snug">
+                        Juster auto-godta og kjørekategorier
+                      </div>
+                    </div>
+
+                    {/* Card 3: Offers */}
+                    <div
+                      onClick={() => setActiveTab('earn_more')}
+                      className="min-w-[220px] bg-[#171E2D] hover:bg-[#1D2638] border border-white/10 rounded-2xl p-3.5 cursor-pointer transition-colors space-y-1.5 shrink-0"
+                    >
+                      <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
+                        <Gift className="w-4 h-4" />
+                      </div>
+                      <div className="text-xs font-bold text-white">Bonuser & Kampanjer</div>
+                      <div className="text-[11px] text-slate-400 leading-snug">
+                        Se opptjente bonuser og mål
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* 2x2 CORE STATS GRID */}
+                  <div className="grid grid-cols-2 gap-2.5 pt-1">
+                    
+                    {/* Today's earnings */}
+                    <div
+                      onClick={() => setShowEarningsView(true)}
+                      className="bg-[#171E2D] hover:bg-[#1D2638] border border-white/10 rounded-2xl p-3.5 cursor-pointer transition-colors flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="text-[11px] text-slate-400 font-medium">Dagens inntjening</div>
+                        <div className="text-base font-black text-white mt-0.5">kr {todayNet},00</div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-500" />
+                    </div>
+
+                    {/* Rewards Tier */}
+                    <div
+                      onClick={() => setShowCampaignsModal(true)}
+                      className="bg-[#171E2D] hover:bg-[#1D2638] border border-white/10 rounded-2xl p-3.5 cursor-pointer transition-colors space-y-1"
+                    >
+                      <div className="flex items-center justify-between text-[11px] text-slate-400">
+                        <span className="flex items-center gap-1 text-slate-300 font-semibold">
+                          <Award className="w-3.5 h-3.5 text-slate-300" />
+                          Silver
+                        </span>
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                      </div>
+                      <div className="text-[10px] text-slate-400">Turer i dag: {todayCompletedTrips.length}</div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div className="bg-slate-400 h-full rounded-full" style={{ width: '60%' }} />
+                      </div>
+                    </div>
+
+                    {/* Driver score */}
+                    <div className="bg-[#171E2D] border border-white/10 rounded-2xl p-3.5 flex items-center justify-between">
+                      <div>
+                        <div className="text-[11px] text-slate-400 font-medium">Sjåførscore</div>
+                        <div className="text-base font-black text-emerald-400 mt-0.5">99%</div>
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-500">Utmerket</span>
+                    </div>
+
+                    {/* Acceptance rate */}
+                    <div className="bg-[#171E2D] border border-white/10 rounded-2xl p-3.5 flex items-center justify-between">
+                      <div>
+                        <div className="text-[11px] text-slate-400 font-medium">Akseptgrad</div>
+                        <div className="text-base font-black text-white mt-0.5">96%</div>
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-400">Aktiv</span>
+                    </div>
+
+                  </div>
+
+                </div>
+              </div>
+            )}
+
           </div>
+        )}
+
+        {/* VIEW 2: EARN MORE (TJEN MER) */}
+        {activeTab === 'earn_more' && (
+          <BoltEarnMoreView
+            onOpenEarnings={() => setShowEarningsView(true)}
+            onOpenScheduled={() => setShowScheduledModal(true)}
+            onOpenCampaigns={() => setShowCampaignsModal(true)}
+            completedTrips={myCompletedTrips}
+          />
+        )}
+
+        {/* VIEW 3: RIDES (TURER) */}
+        {activeTab === 'rides' && (
+          <BoltRidesView
+            completedTrips={myCompletedTrips}
+          />
+        )}
+
+        {/* VIEW 4: HELP (HJELP) */}
+        {activeTab === 'help' && (
+          <BoltHelpView
+            driverPhone={currentDriver?.phone}
+          />
+        )}
+
+      </div>
+
+      {/* 2. BOTTOM NAVIGATION BAR (Bolt Style - 4 Tabs) */}
+      <div className="sticky bottom-0 z-40 bg-[#10141E] border-t border-white/10 py-2.5 px-4 flex justify-around items-center">
+        
+        {/* Tab 1: Home */}
+        <button
+          onClick={() => setActiveTab('home')}
+          className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+            activeTab === 'home' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <Home className="w-5 h-5" />
+          <span className="text-[10px] font-bold tracking-tight">Hjem</span>
+        </button>
+
+        {/* Tab 2: Earn More */}
+        <button
+          onClick={() => setActiveTab('earn_more')}
+          className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+            activeTab === 'earn_more' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <Wallet className="w-5 h-5" />
+          <span className="text-[10px] font-bold tracking-tight">Tjen mer</span>
+        </button>
+
+        {/* Tab 3: Rides History */}
+        <button
+          onClick={() => setActiveTab('rides')}
+          className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+            activeTab === 'rides' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <History className="w-5 h-5" />
+          <span className="text-[10px] font-bold tracking-tight">Turer</span>
+        </button>
+
+        {/* Tab 4: Help */}
+        <button
+          onClick={() => setActiveTab('help')}
+          className={`flex flex-col items-center gap-1 transition-all cursor-pointer ${
+            activeTab === 'help' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'
+          }`}
+        >
+          <HelpCircle className="w-5 h-5" />
+          <span className="text-[10px] font-bold tracking-tight">Hjelp</span>
+        </button>
+
+      </div>
+
+      {/* MODALS */}
+      <BoltDriverDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        driver={currentDriver}
+        currentVehicle={currentVehicle}
+        onOpenSafety={() => setShowSafetyModal(true)}
+        onOpenEarnings={() => setShowEarningsView(true)}
+        onOpenScheduled={() => setShowScheduledModal(true)}
+        onOpenCampaigns={() => setShowCampaignsModal(true)}
+      />
+
+      <BoltSafetyModal
+        isOpen={showSafetyModal}
+        onClose={() => setShowSafetyModal(false)}
+        onTriggerEmergency={handleTriggerEmergency}
+        driverName={currentDriver?.name}
+        vehiclePlate={currentDriver?.vehiclePlate || currentVehicle?.licensePlate}
+      />
+
+      <BoltPreferencesModal
+        isOpen={showPreferencesModal}
+        onClose={() => setShowPreferencesModal(false)}
+      />
+
+      <BoltDestinationModal
+        isOpen={showDestinationModal}
+        onClose={() => setShowDestinationModal(false)}
+        activeDestination={activeDestination}
+        onSetDestination={(dest) => setActiveDestination(dest)}
+      />
+
+      <BoltSurgeModal
+        isOpen={showSurgeModal}
+        onClose={() => setShowSurgeModal(false)}
+      />
+
+      <BoltScheduledRidesModal
+        isOpen={showScheduledModal}
+        onClose={() => setShowScheduledModal(false)}
+        currentDriver={currentDriver}
+      />
+
+      <BoltCampaignsModal
+        isOpen={showCampaignsModal}
+        onClose={() => setShowCampaignsModal(false)}
+        completedTrips={myCompletedTrips}
+      />
+
+      {showEarningsView && (
+        <div className="fixed inset-0 z-50 bg-[#10141E]">
+          <BoltEarningsView
+            onBack={() => setShowEarningsView(false)}
+            completedTrips={myCompletedTrips}
+          />
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* QUICK-ACCESS EMERGENCY SOS / NØDVARSEL MODAL */}
-      {/* ========================================== */}
-      {showEmergencyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-lg animate-fade-in">
-          <div className="bg-[#131B2A] border-2 border-rose-500 rounded-3xl p-6 max-w-md w-full space-y-5 shadow-2xl relative">
-            <button
-              onClick={() => setShowEmergencyModal(false)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-xl bg-white/5 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 bg-rose-500/20 border-2 border-rose-500 rounded-full flex items-center justify-center mx-auto text-rose-500 animate-pulse">
-                <ShieldAlert className="w-8 h-8" />
-              </div>
-              <h2 className="text-2xl font-black text-white uppercase tracking-wide">
-                Nødvarsel & Sikkerhet
-              </h2>
-              <p className="text-xs text-slate-300">
-                Utløser en taus alarm til Aron Taxi sin sentral med sanntids GPS-posisjon, turdetaljer og passasjerdata.
-              </p>
-            </div>
-
-            {myActiveAlert && (
-              <div className="p-3 bg-rose-500/15 border border-rose-500/40 rounded-2xl flex items-center gap-3 text-rose-300 text-xs">
-                <Radio className="w-5 h-5 text-rose-400 animate-ping shrink-0" />
-                <div>
-                  <span className="font-bold block">🚨 Aktivt nødvarsel registrert</span>
-                  <span className="text-[11px] text-slate-300">Sentralen sporer din bil ({currentDriver.vehiclePlate || 'Drosje'}) i sanntid.</span>
-                </div>
-              </div>
-            )}
-
-            {/* QUICK SILENT DISPATCH TRIGGER */}
-            <div className="space-y-3 pt-2">
+      {/* QUICK SMS MODAL */}
+      {showSmsModal && activeTrip && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#121722] border border-white/10 rounded-3xl p-5 max-w-sm w-full space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white">Send hurtigmelding til passasjer</h3>
               <button
-                disabled={emergencySending}
-                onClick={() => handleTriggerEmergency('Taus alarm: Sjåfør i potensiell fare')}
-                className="w-full py-4 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98]"
+                onClick={() => setShowSmsModal(false)}
+                className="p-1 rounded-full text-slate-400 hover:text-white"
               >
-                <ShieldAlert className="w-5 h-5" />
-                {emergencySending ? 'Sender nødvarsel...' : 'SEND TAUS ALARM TIL SENTRAL'}
-              </button>
-
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <button
-                  disabled={emergencySending}
-                  onClick={() => handleTriggerEmergency('Kunde urolig / truende oppførsel')}
-                  className="p-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 font-bold rounded-xl text-center cursor-pointer"
-                >
-                  ⚠️ Truende Passasjer
-                </button>
-                <button
-                  disabled={emergencySending}
-                  onClick={() => handleTriggerEmergency('Trafikkulykke / Kollisjon')}
-                  className="p-3 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 font-bold rounded-xl text-center cursor-pointer"
-                >
-                  🚗 Ulykke / Kollisjon
-                </button>
-              </div>
-
-              {/* POLICE DIRECT CALL */}
-              <div className="pt-2 border-t border-white/10 flex gap-2">
-                <a
-                  href="tel:112"
-                  className="flex-1 py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2"
-                >
-                  <Phone className="w-4 h-4 text-rose-400" />
-                  Ring Politi (112)
-                </a>
-                <a
-                  href="tel:113"
-                  className="flex-1 py-3 bg-white/10 hover:bg-white/20 border border-white/20 text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-2"
-                >
-                  <Phone className="w-4 h-4 text-emerald-400" />
-                  Ring Medisinsk (113)
-                </a>
-              </div>
-            </div>
-
-            <div className="text-center">
-              <button
-                onClick={() => setShowEmergencyModal(false)}
-                className="text-xs text-slate-400 hover:text-slate-200 font-bold underline cursor-pointer"
-              >
-                Lukk vindu
+                <X className="w-5 h-5" />
               </button>
             </div>
 
+            <div className="space-y-2">
+              <button
+                onClick={() => handleSendQuickSms('Hei! Jeg har ankommet henteadressen nå og venter utenfor i en ' + (currentVehicle?.model || 'Tesla') + '.')}
+                className="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-emerald-500/20 text-xs text-slate-200 hover:text-emerald-400 transition-colors border border-white/5"
+              >
+                «Jeg er fremme og venter utenfor.»
+              </button>
+              <button
+                onClick={() => handleSendQuickSms('Hei! Jeg er på vei og er fremme om ca. 3–5 minutter.')}
+                className="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-emerald-500/20 text-xs text-slate-200 hover:text-emerald-400 transition-colors border border-white/5"
+              >
+                «Er fremme om ca. 3–5 minutter.»
+              </button>
+              <button
+                onClick={() => handleSendQuickSms('Hei! Det er litt kø i området, ankommer straks.')}
+                className="w-full text-left p-3 rounded-2xl bg-white/5 hover:bg-emerald-500/20 text-xs text-slate-200 hover:text-emerald-400 transition-colors border border-white/5"
+              >
+                «Litt kø i området, ankommer straks.»
+              </button>
+            </div>
           </div>
         </div>
       )}

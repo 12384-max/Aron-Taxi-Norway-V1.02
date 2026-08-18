@@ -6,7 +6,10 @@ import 'dotenv/config';
 import {
   handleCreateCheckoutSession,
   handleVerifySession,
+  handleWebhookEvent,
   parseJsonBody,
+  parseRawBody,
+  sendJson,
 } from './src/server/stripeHandlers';
 import { isStripeConfigured, getStripeMode } from './src/server/stripeService';
 
@@ -21,8 +24,11 @@ function stripeApiPlugin(): Plugin {
         // Ensure CORS headers on all /api requests
         if (url.startsWith('/api/')) {
           res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, stripe-signature');
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, HEAD');
+          res.setHeader(
+            'Access-Control-Allow-Headers',
+            'Origin, X-Requested-With, Content-Type, Accept, Authorization, stripe-signature'
+          );
         }
 
         // Handle OPTIONS Preflight
@@ -31,47 +37,78 @@ function stripeApiPlugin(): Plugin {
           return res.end();
         }
 
-        if (url === '/api/health') {
-          res.setHeader('Content-Type', 'application/json');
-          return res.end(
-            JSON.stringify({
+        // Webhook endpoints (Support both GET for status checks and POST for Stripe events)
+        if (url === '/api/stripe/webhook' || url === '/api/stripe-webhook') {
+          if (req.method === 'GET' || req.method === 'HEAD') {
+            return sendJson(res, 200, {
               status: 'ok',
-              service: 'Aron Taxi API (Dev/Vite)',
+              service: 'Aron Taxi Stripe Webhook Endpoint',
+              endpoint: url,
               stripeConfigured: isStripeConfigured(),
               mode: getStripeMode(),
               timestamp: new Date().toISOString(),
-            })
-          );
-        }
+              message:
+                'Stripe Webhook-endepunktet er aktivt og lytter etter POST-hendelser fra Stripe.',
+            });
+          }
 
-        if (url === '/api/stripe-config') {
-          res.setHeader('Content-Type', 'application/json');
-          return res.end(
-            JSON.stringify({
-              isConfigured: isStripeConfigured(),
-              mode: getStripeMode(),
-              publishableKey: process.env.VITE_STRIPE_PUBLISHABLE_KEY || '',
-              message: isStripeConfigured()
-                ? `Stripe er tilkoblet (${getStripeMode() === 'live' ? 'Produksjon' : 'Testmodus'}).`
-                : 'Stripe Secret Key mangler i Secrets.',
-            })
-          );
-        }
-
-        if (url === '/api/create-checkout-session' && req.method === 'POST') {
-          try {
-            const body = await parseJsonBody(req);
-            const origin = (req.headers.origin || req.headers.host) as string | undefined;
-            return await handleCreateCheckoutSession(body, origin, res);
-          } catch (err: any) {
-            console.error('[Vite Stripe Middleware] Error:', err);
-            res.statusCode = 500;
-            res.setHeader('Content-Type', 'application/json');
-            return res.end(JSON.stringify({ error: 'SERVER_ERROR', message: err?.message || 'Serverfeil' }));
+          if (req.method === 'POST') {
+            try {
+              const rawBody = await parseRawBody(req);
+              const sig = req.headers['stripe-signature'] as string | undefined;
+              return await handleWebhookEvent(rawBody, sig, res);
+            } catch (err: any) {
+              console.error('[Vite Webhook Middleware] Error:', err);
+              return sendJson(res, 500, { error: 'WEBHOOK_ERROR', message: err?.message || 'Serverfeil' });
+            }
           }
         }
 
-        if ((url === '/api/verify-session' || url === '/api/verify-checkout-session') && req.method === 'GET') {
+        if (url === '/api/health') {
+          return sendJson(res, 200, {
+            status: 'ok',
+            service: 'Aron Taxi API (Dev/Vite)',
+            stripeConfigured: isStripeConfigured(),
+            mode: getStripeMode(),
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        if (url === '/api/stripe-config') {
+          return sendJson(res, 200, {
+            isConfigured: isStripeConfigured(),
+            mode: getStripeMode(),
+            publishableKey: process.env.VITE_STRIPE_PUBLISHABLE_KEY || '',
+            message: isStripeConfigured()
+              ? `Stripe er tilkoblet (${getStripeMode() === 'live' ? 'Produksjon' : 'Testmodus'}).`
+              : 'Stripe Secret Key mangler i Secrets.',
+          });
+        }
+
+        if (url === '/api/create-checkout-session') {
+          if (req.method === 'GET' || req.method === 'HEAD') {
+            return sendJson(res, 200, {
+              status: 'ok',
+              service: 'Aron Taxi Checkout Session API',
+              stripeConfigured: isStripeConfigured(),
+              mode: getStripeMode(),
+              instructions: 'Send HTTP POST with tripId and amount.',
+            });
+          }
+
+          if (req.method === 'POST') {
+            try {
+              const body = await parseJsonBody(req);
+              const origin = (req.headers.origin || req.headers.host) as string | undefined;
+              return await handleCreateCheckoutSession(body, origin, res);
+            } catch (err: any) {
+              console.error('[Vite Stripe Middleware] Error:', err);
+              return sendJson(res, 500, { error: 'SERVER_ERROR', message: err?.message || 'Serverfeil' });
+            }
+          }
+        }
+
+        if (url === '/api/verify-session' || url === '/api/verify-checkout-session') {
           try {
             const fullUrl = new URL(rawUrl, `http://${req.headers.host || 'localhost'}`);
             const sessionId = fullUrl.searchParams.get('session_id') || '';
@@ -79,9 +116,7 @@ function stripeApiPlugin(): Plugin {
             return await handleVerifySession(sessionId, tripId, res);
           } catch (err: any) {
             console.error('[Vite Stripe Middleware] Verify error:', err);
-            res.statusCode = 500;
-            res.setHeader('Content-Type', 'application/json');
-            return res.end(JSON.stringify({ error: 'VERIFY_ERROR', message: err?.message || 'Verifiseringsfeil' }));
+            return sendJson(res, 500, { error: 'VERIFY_ERROR', message: err?.message || 'Verifiseringsfeil' });
           }
         }
 

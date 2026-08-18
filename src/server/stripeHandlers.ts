@@ -42,11 +42,14 @@ export async function parseRawBody(req: IncomingMessage): Promise<Buffer> {
   });
 }
 
-function sendJson(res: ServerResponse, statusCode: number, data: any) {
+export function sendJson(res: ServerResponse, statusCode: number, data: any) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, stripe-signature');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, HEAD');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Origin, X-Requested-With, Content-Type, Accept, Authorization, stripe-signature'
+  );
   res.statusCode = statusCode;
   res.end(JSON.stringify(data));
 }
@@ -66,7 +69,8 @@ export async function handleCreateCheckoutSession(
     console.warn('[Stripe Handler] ⚠️ STRIPE_SECRET_KEY mangler.');
     return sendJson(res, 503, {
       error: 'STRIPE_NOT_CONFIGURED',
-      message: 'Stripe Secret Key mangler. Vennligst legg inn STRIPE_SECRET_KEY i miljøvariabler/Secrets for Aron Taxi.',
+      message:
+        'Stripe Secret Key mangler. Vennligst legg inn STRIPE_SECRET_KEY i miljøvariabler/Secrets for Aron Taxi.',
     });
   }
 
@@ -114,7 +118,11 @@ export async function handleCreateCheckoutSession(
     const tripSnap: any = await Promise.race([fetchTripPromise, timeoutPromise]);
     if (tripSnap && tripSnap.exists && tripSnap.exists()) {
       const storedTrip = tripSnap.data();
-      if (storedTrip.estimatedPrice && typeof storedTrip.estimatedPrice === 'number' && storedTrip.estimatedPrice > 0) {
+      if (
+        storedTrip.estimatedPrice &&
+        typeof storedTrip.estimatedPrice === 'number' &&
+        storedTrip.estimatedPrice > 0
+      ) {
         validatedAmount = storedTrip.estimatedPrice;
       }
     }
@@ -128,7 +136,9 @@ export async function handleCreateCheckoutSession(
     airport_vip: 'Aron Airport VIP Shuttle',
   };
 
-  const lineItemDescription = `Aron Taxi Oslo: ${pickupAddress || 'Start'} ➔ ${destinationAddress || 'Mål'} (${distanceKm || '—'} km, ${durationMinutes || '—'} min)`;
+  const lineItemDescription = `Aron Taxi Oslo: ${pickupAddress || 'Start'} ➔ ${
+    destinationAddress || 'Mål'
+  } (${distanceKm || '—'} km, ${durationMinutes || '—'} min)`;
   const cleanPickup = (pickupAddress || '').slice(0, 450);
   const cleanDest = (destinationAddress || '').slice(0, 450);
 
@@ -191,13 +201,23 @@ export async function handleCreateCheckoutSession(
   });
 }
 
-export async function handleVerifySession(sessionId: string, tripIdParam: string | undefined, res: ServerResponse) {
+export async function handleVerifySession(
+  sessionId: string,
+  tripIdParam: string | undefined,
+  res: ServerResponse
+) {
   if (!sessionId) {
-    return sendJson(res, 400, { error: 'MISSING_SESSION_ID', message: 'Mangler session_id parameter.' });
+    return sendJson(res, 400, {
+      error: 'MISSING_SESSION_ID',
+      message: 'Mangler session_id parameter.',
+    });
   }
 
   if (!isStripeConfigured()) {
-    return sendJson(res, 503, { error: 'STRIPE_NOT_CONFIGURED', message: 'Stripe er ikke konfigurert på serveren.' });
+    return sendJson(res, 503, {
+      error: 'STRIPE_NOT_CONFIGURED',
+      message: 'Stripe er ikke konfigurert på serveren.',
+    });
   }
 
   const stripe = getStripe();
@@ -234,4 +254,115 @@ export async function handleVerifySession(sessionId: string, tripIdParam: string
     customerEmail: session.customer_details?.email || session.customer_email || null,
     paymentIntentId: paymentIntentId || null,
   });
+}
+
+export async function handleWebhookEvent(
+  rawBody: Buffer | string | any,
+  sig: string | undefined,
+  res: ServerResponse
+) {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  let event: any;
+
+  try {
+    if (webhookSecret && sig) {
+      const stripe = getStripe();
+      const payload = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(typeof rawBody === 'string' ? rawBody : JSON.stringify(rawBody));
+      event = stripe.webhooks.constructEvent(payload, sig, webhookSecret);
+    } else if (!webhookSecret) {
+      console.warn('[Stripe Webhook] ⚠️ STRIPE_WEBHOOK_SECRET mangler i Secrets. Parser payload uten signaturverifisering.');
+      if (Buffer.isBuffer(rawBody)) {
+        event = JSON.parse(rawBody.toString('utf8'));
+      } else if (typeof rawBody === 'string') {
+        event = JSON.parse(rawBody);
+      } else {
+        event = rawBody;
+      }
+    } else {
+      return sendJson(res, 400, {
+        error: 'MISSING_SIGNATURE',
+        message: 'Mangler stripe-signature header.',
+      });
+    }
+  } catch (err: any) {
+    console.error(`[Stripe Webhook] ❌ Signaturfeil under webhook-verifisering: ${err?.message}`);
+    return sendJson(res, 400, {
+      error: 'WEBHOOK_SIGNATURE_ERROR',
+      message: `Webhook Signature Verification Error: ${err?.message}`,
+    });
+  }
+
+  console.log(`[Stripe Webhook] 🔔 Mottatt event: ${event?.type} (ID: ${event?.id || 'ukjent'})`);
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as any;
+        const tripId = session.client_reference_id || session.metadata?.tripId;
+        const paymentIntentId =
+          typeof session.payment_intent === 'string'
+            ? session.payment_intent
+            : session.payment_intent?.id;
+
+        if (tripId) {
+          await updateTripInFirestore(tripId, {
+            paymentStatus: 'paid',
+            stripeSessionId: session.id,
+            paymentIntentId: paymentIntentId || undefined,
+            paidAt: new Date().toISOString(),
+            paymentMethod: 'stripe',
+            status: 'confirmed',
+          });
+          console.log(`[Stripe Webhook] ✅ Tur ${tripId} markert som BETALT via webhook.`);
+        }
+        break;
+      }
+
+      case 'payment_intent.succeeded': {
+        const paymentIntent = event.data.object as any;
+        const tripId = paymentIntent.metadata?.tripId;
+        if (tripId) {
+          await updateTripInFirestore(tripId, {
+            paymentStatus: 'paid',
+            paymentIntentId: paymentIntent.id,
+            paidAt: new Date().toISOString(),
+            paymentMethod: 'stripe',
+          });
+        }
+        break;
+      }
+
+      case 'payment_intent.payment_failed': {
+        const paymentIntent = event.data.object as any;
+        const tripId = paymentIntent.metadata?.tripId;
+        if (tripId) {
+          await updateTripInFirestore(tripId, {
+            paymentStatus: 'payment_failed',
+            paymentIntentId: paymentIntent.id,
+          });
+        }
+        break;
+      }
+
+      case 'checkout.session.expired': {
+        const session = event.data.object as any;
+        const tripId = session.client_reference_id || session.metadata?.tripId;
+        if (tripId) {
+          await updateTripInFirestore(tripId, {
+            paymentStatus: 'cancelled',
+            stripeSessionId: session.id,
+          });
+        }
+        break;
+      }
+
+      default:
+        console.log(`[Stripe Webhook] Event ${event?.type} mottatt og registrert.`);
+    }
+
+    return sendJson(res, 200, { received: true, eventId: event?.id });
+  } catch (error: any) {
+    console.error('[Stripe Webhook] ❌ Behandlingsfeil:', error?.message || error);
+    return sendJson(res, 500, { error: 'Webhook processing error' });
+  }
 }

@@ -83,7 +83,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (snap.exists()) {
         const data = snap.data() as UserProfile;
         // Check if admin whitelist elevates them
-        if (ADMIN_EMAILS.includes(fallbackEmail.toLowerCase()) && data.role !== 'admin') {
+        if (ADMIN_EMAILS.includes((fallbackEmail || '').toLowerCase()) && data.role !== 'admin') {
           data.role = 'admin';
           await updateDoc(userRef, { role: 'admin' }).catch(() => {});
         }
@@ -92,16 +92,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       // Determine initial role
       let determinedRole: UserRole = 'customer';
-      if (ADMIN_EMAILS.includes(fallbackEmail.toLowerCase())) {
+      const cleanEmail = fallbackEmail || '';
+      if (ADMIN_EMAILS.includes(cleanEmail.toLowerCase())) {
         determinedRole = 'admin';
-      } else if (fallbackEmail.toLowerCase().includes('sjafor') || fallbackEmail.toLowerCase().includes('driver')) {
+      } else if (cleanEmail.toLowerCase().includes('sjafor') || cleanEmail.toLowerCase().includes('driver')) {
         determinedRole = 'driver';
       }
 
       const newProfile: UserProfile = {
         uid,
-        email: fallbackEmail,
-        name: fallbackName || fallbackEmail.split('@')[0] || 'Kunde',
+        email: cleanEmail,
+        name: fallbackName || (cleanEmail ? cleanEmail.split('@')[0] : '') || 'Kunde',
         phone: '',
         role: determinedRole,
         createdAt: new Date().toISOString()
@@ -114,7 +115,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         try {
           await setDoc(doc(db, 'admins', uid), {
             uid,
-            email: fallbackEmail,
+            email: cleanEmail,
             role: 'admin',
             createdAt: new Date().toISOString()
           });
@@ -126,13 +127,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return newProfile;
     } catch (err) {
       handleFirestoreError(err, OperationType.GET, `users/${uid}`);
+      const cleanEmail = fallbackEmail || '';
       // Fallback in-memory profile
       return {
         uid,
-        email: fallbackEmail,
-        name: fallbackName || fallbackEmail.split('@')[0] || 'Kunde',
+        email: cleanEmail,
+        name: fallbackName || (cleanEmail ? cleanEmail.split('@')[0] : '') || 'Kunde',
         phone: '',
-        role: ADMIN_EMAILS.includes(fallbackEmail.toLowerCase()) ? 'admin' : 'customer',
+        role: ADMIN_EMAILS.includes(cleanEmail.toLowerCase()) ? 'admin' : 'customer',
         createdAt: new Date().toISOString()
       };
     }
@@ -357,7 +359,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const profile: UserProfile = {
         uid: fbUser.uid,
         email: cleanEmail,
-        name: name || cleanEmail.split('@')[0],
+        name: name || (cleanEmail ? cleanEmail.split('@')[0] : '') || 'Kunde',
         phone: phone || '',
         role: determinedRole,
         createdAt: new Date().toISOString()

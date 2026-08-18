@@ -26,7 +26,9 @@ interface TripContextType {
   acceptTripAtomic: (tripId: string, driverId: string) => Promise<{ success: boolean; error?: string }>;
   rejectTrip: (tripId: string, driverId: string) => Promise<void>;
   updateTripStatus: (tripId: string, status: TripStatus, location?: { lat: number; lng: number }) => void;
-  toggleDriverOnline: (driverId: string, isOnline: boolean) => void;
+  deleteTrip: (tripId: string) => Promise<void>;
+  cancelTrip: (tripId: string, reason?: string) => Promise<void>;
+  toggleDriverOnline: (driverId: string, isOnline?: boolean) => Promise<void>;
   updateDriverLocation: (driverId: string, loc: { lat: number; lng: number; heading?: number; speed?: number }, activeTripId?: string) => void;
   selectDriverVehicle: (driverId: string, vehicleId: string) => Promise<void>;
   updatePricingConfig: (newPricing: PricingConfig) => void;
@@ -848,10 +850,35 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (e) {}
   };
 
-  const toggleDriverOnline = (driverId: string, isOnline: boolean) => {
+  const deleteTrip = async (tripId: string) => {
+    const updated = trips.filter((t) => t.id !== tripId && t.tripId !== tripId);
+    saveTrips(updated);
+    try {
+      await deleteDoc(doc(db, 'trips', tripId));
+    } catch (e) {
+      console.warn('Delete trip Firestore note:', e);
+    }
+  };
+
+  const cancelTrip = async (tripId: string, reason: string = 'Kansellert') => {
+    updateTripStatus(tripId, 'cancelled');
+    try {
+      await setDoc(doc(db, 'trips', tripId), {
+        status: 'cancelled',
+        cancellationReason: reason,
+        cancelledAt: new Date().toISOString()
+      }, { merge: true });
+    } catch (e) {
+      console.warn('Cancel trip error:', e);
+    }
+  };
+
+  const toggleDriverOnline = async (driverId: string, isOnline?: boolean) => {
+    let targetOnline = false;
     const updated = drivers.map((d) => {
       if (d.id === driverId) {
-        return { ...d, isOnline };
+        targetOnline = isOnline !== undefined ? isOnline : !d.isOnline;
+        return { ...d, isOnline: targetOnline };
       }
       return d;
     });
@@ -860,11 +887,11 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const updatedDriver = updated.find((d) => d.id === driverId);
       if (updatedDriver) {
-        setDoc(doc(db, 'drivers', driverId), removeUndefinedFields(updatedDriver), { merge: true }).catch((err) => {
-          console.log('Driver status cloud sync note:', err);
-        });
+        await setDoc(doc(db, 'drivers', driverId), removeUndefinedFields(updatedDriver), { merge: true });
       }
-    } catch (e) {}
+    } catch (err) {
+      console.log('Driver status cloud sync note:', err);
+    }
   };
 
   const updatePricingConfig = (newPricing: PricingConfig) => {
@@ -978,7 +1005,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
 
     // Save driver to state and cloud
-    const updatedDrivers = [...drivers.filter(d => d.email.toLowerCase() !== driverEmail.toLowerCase()), newDriver];
+    const updatedDrivers = [...drivers.filter(d => (d.email || '').toLowerCase() !== (driverEmail || '').toLowerCase()), newDriver];
     saveDrivers(updatedDrivers);
 
     // Register UserProfile
@@ -1416,6 +1443,8 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         acceptTripAtomic,
         rejectTrip,
         updateTripStatus,
+        deleteTrip,
+        cancelTrip,
         toggleDriverOnline,
         updateDriverLocation,
         selectDriverVehicle,
