@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { LeafletMap } from '../components/LeafletMap';
 import { useAuth } from '../context/AuthContext';
 import { useTrips } from '../context/TripContext';
-import { Trip, Driver, Vehicle } from '../types';
+import { Trip, TripStatus, Driver, Vehicle } from '../types';
 import { soundService } from '../services/sound';
 
 // Driver Components
@@ -126,34 +126,136 @@ export const DriverDashboardPage: React.FC = () => {
     return `${mins}m ${secs}s`;
   };
 
+  // Active trip validation helper
+  // Time tick to auto-promote pre-orders when their scheduled time approaches
+  const [timeTick, setTimeTick] = useState(Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimeTick(Date.now());
+    }, 15000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const getScheduledTimeDiffMs = (t: Trip): number | null => {
+    const timeStr = t.scheduledPickupTime || t.scheduledTime;
+    if (!timeStr) return null;
+    const parsed = new Date(timeStr).getTime();
+    return isNaN(parsed) ? null : parsed - Date.now();
+  };
+
+  const isTripActiveForDriver = (t: Trip, driverId?: string): boolean => {
+    if (!driverId) return false;
+    const isThisDriver = t.driverId === driverId || t.acceptedBy === driverId;
+    if (!isThisDriver) return false;
+
+    // Terminal statuses can NEVER be active
+    const terminalStatuses: TripStatus[] = [
+      'completed',
+      'COMPLETED',
+      'cancelled',
+      'CANCELLED',
+      'rejected',
+      'DRIVER_DECLINED'
+    ];
+    if (terminalStatuses.includes(t.status)) return false;
+
+    // Active in-ride statuses are always immediately active
+    const inProgressStatuses: TripStatus[] = [
+      'DRIVER_ARRIVING',
+      'driver_arriving',
+      'DRIVER_ARRIVED',
+      'driver_arrived',
+      'IN_PROGRESS',
+      'trip_started',
+      'active'
+    ];
+    if (inProgressStatuses.includes(t.status)) return true;
+
+    // For accepted/assigned status:
+    if (
+      t.status === 'DRIVER_ACCEPTED' ||
+      t.status === 'accepted' ||
+      t.status === 'driver_assigned'
+    ) {
+      // If it's a pre-order scheduled far in future (> 30 min), keep in scheduled tab until time comes
+      if (t.isPreorder) {
+        const diffMs = getScheduledTimeDiffMs(t);
+        if (diffMs !== null && diffMs > 30 * 60 * 1000) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    return false;
+  };
+
+  // Active trip assigned to this driver
+  const activeTrip = trips.find((t) => isTripActiveForDriver(t, currentDriver?.id));
+
+  // Helper to verify if an order is a NEW incoming request for this driver
+  const isTripPendingForDriver = (t: Trip, driverId?: string): boolean => {
+    if (!driverId) return false;
+
+    // Terminal or declined statuses must NEVER be shown as incoming request
+    const terminalStatuses: TripStatus[] = [
+      'completed',
+      'COMPLETED',
+      'cancelled',
+      'CANCELLED',
+      'rejected',
+      'DRIVER_DECLINED',
+      'pending_payment'
+    ];
+    if (terminalStatuses.includes(t.status)) return false;
+    if (t.paymentStatus === 'payment_failed' || t.paymentStatus === 'cancelled') return false;
+
+    // If driver already declined or rejected this order, never show again
+    if (t.declinedBy === driverId) return false;
+    if (t.rejectedDriverIds && t.rejectedDriverIds.includes(driverId)) return false;
+
+    // If already active or taken by another driver, never show
+    if (t.driverId && t.driverId !== driverId) return false;
+    if (t.acceptedBy && t.acceptedBy !== driverId) return false;
+
+    // If already active for this driver, it belongs in activeTrip view
+    if (isTripActiveForDriver(t, driverId)) return false;
+
+    // If explicitly assigned to another driver, do not show
+    if (t.assignedDriverId && t.assignedDriverId !== driverId) return false;
+
+    // For unaccepted pre-orders scheduled in the future:
+    // If > 20 min in future, leave in Forhåndsbestillinger list
+    // When <= 20 min or time arrived, it automatically pops up as a normal live request!
+    if (t.isPreorder && !t.driverId && !t.acceptedBy) {
+      const diffMs = getScheduledTimeDiffMs(t);
+      if (diffMs !== null && diffMs > 20 * 60 * 1000) {
+        return false;
+      }
+    }
+
+    // Allowed pending statuses
+    const pendingStatuses: TripStatus[] = [
+      'NEW',
+      'pending',
+      'requested',
+      'searching_driver',
+      'confirmed',
+      'ASSIGNED'
+    ];
+    return pendingStatuses.includes(t.status);
+  };
+
   // Incoming pending trips in Oslo (Real database orders only)
-  const pendingTrips = trips.filter(
-    (t) =>
-      (t.status === 'pending' ||
-        t.status === 'requested' ||
-        t.status === 'searching_driver' ||
-        t.status === 'confirmed') &&
-      t.status !== 'pending_payment' &&
-      !t.driverId &&
-      t.paymentStatus !== 'payment_failed' &&
-      t.paymentStatus !== 'cancelled' &&
-      (!t.rejectedDriverIds || !t.rejectedDriverIds.includes(currentDriver?.id || ''))
-  );
+  const pendingTrips = trips.filter((t) => isTripPendingForDriver(t, currentDriver?.id));
 
   const incomingRequest = pendingTrips.length > 0 ? pendingTrips[0] : null;
 
-  // Active trip assigned to this driver
-  const activeTrip = trips.find(
-    (t) =>
-      (t.driverId === currentDriver?.id || t.assignedDriverId === currentDriver?.id) &&
-      t.status !== 'completed' &&
-      t.status !== 'cancelled' &&
-      t.status !== 'rejected'
-  );
-
   // Completed trips by this driver (Strictly real from database)
   const myCompletedTrips = trips.filter(
-    (t) => t.driverId === currentDriver?.id && t.status === 'completed'
+    (t) =>
+      t.driverId === currentDriver?.id &&
+      (t.status === 'completed' || t.status === 'COMPLETED')
   );
 
   // Today's completed trips
@@ -167,6 +269,24 @@ export const DriverDashboardPage: React.FC = () => {
     0
   );
   const todayNet = Math.round(todayGross * 0.85);
+
+  // Real acceptance rate and points calculation strictly based on database orders
+  const myAcceptedTrips = trips.filter(
+    (t) =>
+      t.acceptedBy === currentDriver?.id ||
+      (t.driverId === currentDriver?.id &&
+        ['DRIVER_ACCEPTED', 'accepted', 'driver_assigned', 'driver_arrived', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'trip_started', 'COMPLETED', 'completed'].includes(t.status))
+  );
+  const myDeclinedTrips = trips.filter(
+    (t) =>
+      t.declinedBy === currentDriver?.id ||
+      (t.rejectedDriverIds && t.rejectedDriverIds.includes(currentDriver?.id || ''))
+  );
+  const totalDecisions = myAcceptedTrips.length + myDeclinedTrips.length;
+  const realAcceptanceRateNumber = totalDecisions > 0 ? Math.round((myAcceptedTrips.length / totalDecisions) * 100) : 0;
+  const acceptanceRateText = `${realAcceptanceRateNumber}%`;
+  const driverPoints = (myCompletedTrips.length * 50) + (myAcceptedTrips.length * 10);
+  const driverTier = 'Sølv';
 
   // Sound chime when new trip arrives and driver is ONLINE
   useEffect(() => {
@@ -286,21 +406,31 @@ export const DriverDashboardPage: React.FC = () => {
     if (!activeTrip) return;
 
     if (
+      activeTrip.status === 'DRIVER_ACCEPTED' ||
       activeTrip.status === 'driver_assigned' ||
       activeTrip.status === 'accepted' ||
       activeTrip.status === 'confirmed' ||
-      activeTrip.status === 'driver_arriving'
+      activeTrip.status === 'driver_arriving' ||
+      activeTrip.status === 'DRIVER_ARRIVING'
     ) {
       await updateTripStatus(activeTrip.id, 'driver_arrived');
       toast.success('Markert som ankommet! Venter på passasjer.');
       if (soundEnabled) soundService.playDriverArrivedSound(0.7);
-    } else if (activeTrip.status === 'driver_arrived') {
+    } else if (
+      activeTrip.status === 'driver_arrived' ||
+      activeTrip.status === 'DRIVER_ARRIVED'
+    ) {
       await updateTripStatus(activeTrip.id, 'trip_started');
       toast.success('Turen er startet! God kjøretur.');
       if (soundEnabled) soundService.playTripStartedSound(0.7);
-    } else if (activeTrip.status === 'trip_started' || activeTrip.status === 'active') {
+    } else if (
+      activeTrip.status === 'trip_started' ||
+      activeTrip.status === 'IN_PROGRESS' ||
+      activeTrip.status === 'active'
+    ) {
       await updateTripStatus(activeTrip.id, 'completed');
-      toast.success(`Turen er fullført! ${activeTrip.estimatedPrice} kr registrert.`);
+      const earned = Math.round((activeTrip.finalPrice || activeTrip.estimatedPrice || 0) * 0.85);
+      toast.success(`Turen er fullført! ${earned} kr registrert på din sjåførkonto.`);
       if (soundEnabled) soundService.playTripCompletedSound(0.9);
     }
   };
@@ -491,7 +621,9 @@ export const DriverDashboardPage: React.FC = () => {
                   isOnline={currentDriver.isOnline}
                   todayNet={todayNet}
                   todayTripsCount={todayCompletedTrips.length}
-                  driverScore="100%"
+                  acceptanceRate={acceptanceRateText}
+                  points={driverPoints}
+                  tierName={driverTier}
                   onlineDurationText={formatOnlineDuration(onlineSeconds)}
                   vehicleName={currentVehicle?.model || 'Tesla Model Y'}
                   vehiclePlate={currentVehicle?.licensePlate || 'EP 17891'}
@@ -578,6 +710,7 @@ export const DriverDashboardPage: React.FC = () => {
               currentVehicle={currentVehicle}
               onAcceptTrip={handleAcceptTrip}
               onRejectTrip={handleRejectTrip}
+              onCancelTrip={handleCancelTripDirect}
               onDeleteTrip={handleDeleteTripDirect}
               onCreateStreetTrip={createTrip}
               onOpenTripOnMap={(trip) => {
@@ -594,6 +727,9 @@ export const DriverDashboardPage: React.FC = () => {
               currentDriver={currentDriver}
               currentVehicle={currentVehicle}
               completedTrips={myCompletedTrips}
+              acceptanceRate={acceptanceRateText}
+              points={driverPoints}
+              tierName={driverTier}
               soundEnabled={soundEnabled}
               onToggleSound={() => setSoundEnabled(!soundEnabled)}
               onLogout={() => {
@@ -658,6 +794,9 @@ export const DriverDashboardPage: React.FC = () => {
           vehicle={currentVehicle}
           todayEarnings={todayNet}
           todayTrips={todayCompletedTrips.length}
+          acceptanceRate={acceptanceRateText}
+          points={driverPoints}
+          tierName={driverTier}
           onOpenEarnings={() => {
             setIsDrawerOpen(false);
             setShowEarningsView(true);

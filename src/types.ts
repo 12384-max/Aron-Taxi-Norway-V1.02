@@ -1,18 +1,27 @@
 export type TripStatus =
+  | 'NEW'
   | 'pending'
   | 'pending_payment'
   | 'requested'
   | 'confirmed'
   | 'searching_driver'
-  | 'accepted'
+  | 'ASSIGNED'
   | 'driver_assigned'
+  | 'DRIVER_ACCEPTED'
+  | 'accepted'
+  | 'DRIVER_DECLINED'
+  | 'rejected'
+  | 'DRIVER_ARRIVING'
   | 'driver_arriving'
+  | 'DRIVER_ARRIVED'
   | 'driver_arrived'
+  | 'IN_PROGRESS'
   | 'trip_started'
   | 'active'
+  | 'COMPLETED'
   | 'completed'
-  | 'cancelled'
-  | 'rejected';
+  | 'CANCELLED'
+  | 'cancelled';
 
 export type UserRole = 'customer' | 'driver' | 'admin';
 
@@ -95,6 +104,10 @@ export interface Trip {
     petFriendly?: boolean;
   };
   flightNumber?: string;
+  scheduledPickupTime?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  cancellationReason?: string;
 
   // Driver & Vehicle
   driverId?: string;
@@ -107,6 +120,10 @@ export interface Trip {
   vehicleLicensePlate?: string;
   driverLocation?: { lat: number; lng: number; heading?: number; speed?: number };
   rejectedDriverIds?: string[];
+  declinedAt?: string;
+  declinedBy?: string;
+  acceptedAt?: string;
+  acceptedBy?: string;
   
   status: TripStatus;
   createdAt: string;
@@ -143,6 +160,7 @@ export interface Driver {
   name: string;
   email: string;
   phone: string;
+  avatarUrl?: string;
   password?: string;
   pinCode?: string;
   licenseNumber: string;

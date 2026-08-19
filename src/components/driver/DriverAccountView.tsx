@@ -27,6 +27,9 @@ interface DriverAccountViewProps {
   currentDriver?: Driver;
   currentVehicle?: Vehicle;
   completedTrips: Trip[];
+  acceptanceRate?: string;
+  points?: number;
+  tierName?: string;
   soundEnabled: boolean;
   onToggleSound: () => void;
   onLogout: () => void;
@@ -36,6 +39,9 @@ export const DriverAccountView: React.FC<DriverAccountViewProps> = ({
   currentDriver,
   currentVehicle,
   completedTrips,
+  acceptanceRate = '0%',
+  points = 0,
+  tierName = 'Sølv',
   soundEnabled,
   onToggleSound,
   onLogout
@@ -78,6 +84,9 @@ export const DriverAccountView: React.FC<DriverAccountViewProps> = ({
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[10px] font-black uppercase">
                 Verifisert Drosjesjåfør
               </span>
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase">
+                {tierName} Partner
+              </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
               {currentDriver?.phone || '+47 96 99 09 01'} • {currentDriver?.email || 'driver@arontaxi.no'}
@@ -104,28 +113,34 @@ export const DriverAccountView: React.FC<DriverAccountViewProps> = ({
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <div className="flex items-center gap-2">
             <CreditCard className="w-5 h-5 text-[#E5B83B]" />
-            <h3 className="font-black text-base text-white">Inntekt & Utbetalinger (Nets Easy / Oppgjør)</h3>
+            <h3 className="font-black text-base text-white">Inntekt & Ytelse (Ekte data fra database)</h3>
           </div>
           <span className="text-xs text-emerald-400 font-bold">85% Sjåførprovisjon</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="p-4 bg-black/40 border border-white/10 rounded-2xl">
             <span className="text-[10px] text-slate-400 uppercase font-bold block">Netto i dag</span>
-            <div className="text-2xl font-black text-emerald-400 font-mono mt-1">kr {todayNet}</div>
-            <span className="text-[11px] text-slate-400 font-mono">{todayTrips.length} turer fullført</span>
+            <div className="text-xl sm:text-2xl font-black text-emerald-400 font-mono mt-1">kr {todayNet}</div>
+            <span className="text-[11px] text-slate-400 font-mono">{todayTrips.length} turer i dag</span>
           </div>
 
           <div className="p-4 bg-black/40 border border-white/10 rounded-2xl">
             <span className="text-[10px] text-slate-400 uppercase font-bold block">Akkumulert netto</span>
-            <div className="text-2xl font-black text-white font-mono mt-1">kr {totalNet}</div>
+            <div className="text-xl sm:text-2xl font-black text-white font-mono mt-1">kr {totalNet}</div>
             <span className="text-[11px] text-slate-400 font-mono">{completedTrips.length} turer totalt</span>
           </div>
 
           <div className="p-4 bg-black/40 border border-white/10 rounded-2xl">
-            <span className="text-[10px] text-slate-400 uppercase font-bold block">Utbetalingsplan</span>
-            <div className="text-base font-bold text-[#E5B83B] mt-1">Ukentlig oppgjør</div>
-            <span className="text-[11px] text-slate-400">Automatisk overføring til bank</span>
+            <span className="text-[10px] text-slate-400 uppercase font-bold block">Akseptgrad</span>
+            <div className="text-xl sm:text-2xl font-black text-emerald-400 font-mono mt-1">{acceptanceRate}</div>
+            <span className="text-[11px] text-slate-400">Reelle ordrer</span>
+          </div>
+
+          <div className="p-4 bg-black/40 border border-white/10 rounded-2xl">
+            <span className="text-[10px] text-slate-400 uppercase font-bold block">Sjåførpoeng</span>
+            <div className="text-xl sm:text-2xl font-black text-amber-400 font-mono mt-1">{points} p</div>
+            <span className="text-[11px] text-slate-400 font-bold text-amber-300/90">{tierName} status</span>
           </div>
         </div>
 

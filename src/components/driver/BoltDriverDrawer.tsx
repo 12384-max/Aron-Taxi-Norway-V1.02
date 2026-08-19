@@ -23,6 +23,11 @@ interface BoltDriverDrawerProps {
   driver?: Driver;
   currentVehicle?: Vehicle;
   vehicle?: Vehicle;
+  todayEarnings?: number;
+  todayTrips?: number;
+  acceptanceRate?: string;
+  points?: number;
+  tierName?: string;
   onOpenSafety?: () => void;
   onOpenEarnings?: () => void;
   onOpenScheduled?: () => void;
@@ -38,6 +43,11 @@ export const BoltDriverDrawer: React.FC<BoltDriverDrawerProps> = ({
   driver,
   currentVehicle,
   vehicle,
+  todayEarnings,
+  todayTrips,
+  acceptanceRate = '0%',
+  points = 0,
+  tierName = 'Sølv',
   onOpenSafety,
   onOpenEarnings,
   onOpenScheduled,
@@ -102,12 +112,12 @@ export const BoltDriverDrawer: React.FC<BoltDriverDrawerProps> = ({
                 <div className="flex items-center gap-1.5 mt-1">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-700/80 text-slate-200 text-[11px] font-semibold border border-slate-600">
                     <Award className="w-3 h-3 text-slate-300" />
-                    Silver
+                    {tierName}
                     <ChevronRight className="w-2.5 h-2.5 opacity-60" />
                   </span>
                   <span className="flex items-center gap-0.5 text-amber-400 text-xs font-bold">
                     <Star className="w-3 h-3 fill-amber-400" />
-                    {driver?.rating?.toFixed(2) || '4.82'}
+                    {driver?.rating ? driver.rating.toFixed(2) : '5.00'}
                   </span>
                 </div>
               </div>
@@ -120,15 +130,15 @@ export const BoltDriverDrawer: React.FC<BoltDriverDrawerProps> = ({
             </button>
           </div>
 
-          {/* 2 stat cards side by side */}
+          {/* 2 stat cards side by side (Real data based on orders in database) */}
           <div className="grid grid-cols-2 gap-2.5 mt-3">
             <div className="bg-[#1A2232] border border-white/5 rounded-xl p-3 text-center">
-              <div className="text-lg font-black text-white">99%</div>
-              <div className="text-[11px] text-slate-400 font-medium">Driver score</div>
+              <div className="text-lg font-black text-white font-mono">{points} p</div>
+              <div className="text-[11px] text-slate-400 font-medium">Sjåførpoeng ({tierName})</div>
             </div>
             <div className="bg-[#1A2232] border border-white/5 rounded-xl p-3 text-center">
-              <div className="text-lg font-black text-white">54%</div>
-              <div className="text-[11px] text-slate-400 font-medium">Acceptance rate</div>
+              <div className="text-lg font-black text-emerald-400 font-mono">{acceptanceRate}</div>
+              <div className="text-[11px] text-slate-400 font-medium">Akseptgrad</div>
             </div>
           </div>
         </div>

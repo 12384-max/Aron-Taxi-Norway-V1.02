@@ -56,7 +56,9 @@ import {
   CreditCard,
   Lock,
   ExternalLink,
-  Receipt
+  Receipt,
+  Award,
+  MessageSquare
 } from 'lucide-react';
 
 export type VehicleTier = 'vip_black' | 'comfort_eco' | 'airport_vip';
@@ -114,7 +116,7 @@ const VEHICLE_TIERS: TierOption[] = [
 export const OrderPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { createTrip, pricing, addTipAndRatingToTrip, trips, drivers, updateTripPaymentStatus } = useTrips();
+  const { createTrip, pricing, addTipAndRatingToTrip, trips, drivers, vehicles, updateTripPaymentStatus } = useTrips();
   const { user, loginAsGuest } = useAuth();
 
   const stateLocation = location.state || {};
@@ -668,52 +670,173 @@ export const OrderPage: React.FC = () => {
             )}
 
             {/* LIVE MAP TRACKER WITH MOVING DRIVER LOCATION */}
-            <div className="space-y-2 text-left">
-              <LeafletMap
-                pickup={activeBookedTrip.pickup}
-                destination={activeBookedTrip.destination}
-                driverLocation={activeBookedTrip.driverLocation}
-                routeGeometry={activeBookedTrip.routeGeometry}
-                centerLat={activeBookedTrip.driverLocation?.lat || activeBookedTrip.pickup?.lat || 59.9139}
-                centerLng={activeBookedTrip.driverLocation?.lng || activeBookedTrip.pickup?.lng || 10.7522}
-                zoom={14}
-              />
-            </div>
+            {(() => {
+              const assignedDriverObj = activeBookedTrip?.driverId
+                ? drivers.find((d) => d.id === activeBookedTrip.driverId)
+                : (activeBookedTrip?.driverName ? drivers.find((d) => d.name === activeBookedTrip.driverName) : undefined);
 
-            {/* ASSIGNED DRIVER & VEHICLE CARD */}
-            {activeBookedTrip.driverName && (
-              <div className="bg-[#090D16] p-5 rounded-2xl border border-[#D4AF37]/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#D4AF37]/30 to-black border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37]">
-                    <Car className="w-6 h-6" />
+              const assignedVehicleObj = (assignedDriverObj?.vehicleId || activeBookedTrip?.vehicleId)
+                ? vehicles.find((v) => v.id === assignedDriverObj?.vehicleId || v.id === activeBookedTrip?.vehicleId)
+                : undefined;
+
+              const effectiveDriverLocation = activeBookedTrip?.driverLocation || assignedDriverObj?.currentLocation;
+
+              const driverName = activeBookedTrip.driverName || assignedDriverObj?.name;
+              const hasDriverAssigned = Boolean(
+                driverName ||
+                activeBookedTrip.driverId ||
+                ['driver_assigned', 'ASSIGNED', 'DRIVER_ACCEPTED', 'accepted', 'driver_arriving', 'driver_arrived', 'DRIVER_ARRIVED', 'trip_started', 'IN_PROGRESS', 'completed', 'COMPLETED'].includes(activeBookedTrip.status)
+              );
+
+              return (
+                <div className="space-y-4 text-left">
+                  {/* Map */}
+                  <div className="rounded-2xl overflow-hidden border border-[#D4AF37]/30 shadow-2xl relative">
+                    <LeafletMap
+                      pickup={activeBookedTrip.pickup}
+                      destination={activeBookedTrip.destination}
+                      driverLocation={effectiveDriverLocation}
+                      routeGeometry={activeBookedTrip.routeGeometry}
+                      centerLat={effectiveDriverLocation?.lat || activeBookedTrip.pickup?.lat || 59.9139}
+                      centerLng={effectiveDriverLocation?.lng || activeBookedTrip.pickup?.lng || 10.7522}
+                      zoom={14}
+                    />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-sm text-white">{activeBookedTrip.driverName}</h3>
-                      <span className="px-2 py-0.5 bg-[#D4AF37]/20 border border-[#D4AF37]/40 text-[#D4AF37] text-[10px] font-black rounded-full uppercase">
-                        Sertifisert Aron VIP
-                      </span>
+
+                  {/* REAL DRIVER PROFILE & RATES CARD */}
+                  {hasDriverAssigned && (
+                    <div className="bg-gradient-to-b from-[#121826] to-[#0A0E17] p-5 sm:p-6 rounded-3xl border border-[#D4AF37]/40 shadow-2xl space-y-5 animate-in fade-in duration-300">
+                      
+                      {/* Driver & Car Details Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/10 pb-5">
+                        
+                        {/* Driver Profile Picture & Identity */}
+                        <div className="flex items-center gap-4">
+                          <div className="relative shrink-0">
+                            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-[#E5B83B] to-[#F3D37A] p-0.5 shadow-xl shadow-amber-500/20">
+                              {assignedDriverObj?.avatarUrl ? (
+                                <img
+                                  src={assignedDriverObj.avatarUrl}
+                                  alt={driverName || 'Sjåfør'}
+                                  className="w-full h-full object-cover rounded-2xl"
+                                />
+                              ) : (
+                                <div className="w-full h-full rounded-2xl bg-slate-950 flex items-center justify-center font-black text-xl text-[#E5B83B]">
+                                  {(driverName || 'Aron').slice(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 border-2 border-[#121826] flex items-center justify-center text-slate-950">
+                              <CheckCircle2 className="w-3 h-3 text-slate-950 stroke-[3]" />
+                            </span>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-bold text-base sm:text-lg text-white">
+                                {driverName || 'Aron VIP Sjåfør'}
+                              </h3>
+                              <span className="px-2.5 py-0.5 bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-[10px] font-black rounded-full uppercase flex items-center gap-1">
+                                <ShieldCheck className="w-3 h-3" />
+                                Verifisert
+                              </span>
+                              <span className="px-2.5 py-0.5 bg-slate-700/80 text-slate-200 border border-slate-600 text-[10px] font-bold rounded-full flex items-center gap-1">
+                                <Award className="w-3 h-3 text-slate-300" />
+                                Sølv Sjåfør
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-300">
+                              <span className="flex items-center gap-1 font-bold text-amber-400">
+                                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                                {assignedDriverObj?.rating ? assignedDriverObj.rating.toFixed(1) : '5.0'}
+                                <span className="text-slate-400 font-normal font-mono">
+                                  ({assignedDriverObj?.ratingCount || 1} vurderinger)
+                                </span>
+                              </span>
+                              <span>•</span>
+                              <span className="text-slate-300 font-mono text-[11px]">
+                                Løyvenr: <strong className="text-[#E5B83B]">{activeBookedTrip.permitNumber || assignedVehicleObj?.permitNumber || assignedDriverObj?.permitNumber || 'OS 10597'}</strong>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Communication Buttons */}
+                        <div className="flex items-center gap-2 self-stretch sm:self-auto">
+                          {(activeBookedTrip.driverPhone || assignedDriverObj?.phone) && (
+                            <>
+                              <a
+                                href={`tel:${activeBookedTrip.driverPhone || assignedDriverObj?.phone}`}
+                                className="flex-1 sm:flex-none px-4 py-2.5 bg-gradient-to-r from-[#D4AF37] to-[#C5A028] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg flex items-center justify-center gap-1.5 hover:brightness-110 transition-all cursor-pointer"
+                              >
+                                <Phone className="w-3.5 h-3.5" />
+                                Ring
+                              </a>
+                              <a
+                                href={`sms:${activeBookedTrip.driverPhone || assignedDriverObj?.phone}`}
+                                className="flex-1 sm:flex-none px-4 py-2.5 bg-white/10 hover:bg-white/15 text-white font-bold text-xs uppercase tracking-wider rounded-xl border border-white/10 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5 text-[#D4AF37]" />
+                                SMS
+                              </a>
+                            </>
+                          )}
+                        </div>
+
+                      </div>
+
+                      {/* VEHICLE & RATES GRID (Real data from backend & database) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        
+                        {/* Vehicle Card */}
+                        <div className="p-4 bg-black/40 border border-white/10 rounded-2xl space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Kjøretøy</span>
+                            <span className="text-[10px] text-emerald-400 font-bold">100% Elektrisk</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-[#E5B83B]">
+                              <Car className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <div className="font-bold text-sm text-white">
+                                {activeBookedTrip.vehicleModel || assignedVehicleObj?.model || 'Tesla Model Y'}
+                              </div>
+                              <div className="text-xs font-mono font-bold text-[#E5B83B] mt-0.5">
+                                Skilt: {activeBookedTrip.vehicleLicensePlate || assignedVehicleObj?.licensePlate || 'EP 17891'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Rates & Fare Breakdown Card */}
+                        <div className="p-4 bg-black/40 border border-white/10 rounded-2xl space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Takster & Fastpris</span>
+                            <span className="text-[10px] text-amber-300 font-bold">Garantert</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs font-mono">
+                            <span className="text-slate-300">Starttakst:</span>
+                            <span className="text-white font-bold">{pricing.baseStartFee} NOK</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs font-mono">
+                            <span className="text-slate-300">Km-takst:</span>
+                            <span className="text-white font-bold">{activeBookedTrip.ratePerKm || pricing.dayRateKm} NOK/km</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs font-mono border-t border-white/10 pt-1.5">
+                            <span className="text-slate-200 font-bold">Avtalt total:</span>
+                            <span className="text-sm font-black text-[#E5B83B]">{activeBookedTrip.estimatedPrice} NOK</span>
+                          </div>
+                        </div>
+
+                      </div>
+
                     </div>
-                    <p className="text-xs text-slate-300">{activeBookedTrip.vehicleModel || 'Tesla Model Y Juniper'}</p>
-                    <div className="flex items-center gap-2 mt-0.5 text-[10px] text-[#D4AF37] font-mono">
-                      <span>Bilskilt: {activeBookedTrip.vehicleLicensePlate || 'EK 88201'}</span>
-                      <span>·</span>
-                      <span>Drosjeløyve: {activeBookedTrip.permitNumber || 'OS 10597'}</span>
-                    </div>
-                  </div>
+                  )}
                 </div>
-
-                {activeBookedTrip.driverPhone && (
-                  <a
-                    href={`tel:${activeBookedTrip.driverPhone}`}
-                    className="px-5 py-2.5 bg-gradient-to-r from-[#D4AF37] via-[#E5C158] to-[#C5A028] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg flex items-center gap-2 hover:brightness-110 transition-all"
-                  >
-                    <Phone className="w-4 h-4" />
-                    Ring Sjåfør
-                  </a>
-                )}
-              </div>
-            )}
+              );
+            })()}
 
             {/* POST-TRIP RATING & TIPPING SECTION (WHEN COMPLETED) */}
             {activeBookedTrip.status === 'completed' && !ratingSubmitted && (

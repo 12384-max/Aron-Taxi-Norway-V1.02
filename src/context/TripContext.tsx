@@ -307,7 +307,11 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const now = new Date().toISOString();
 
     const isStripePending = tripData.paymentStatus === 'pending_payment';
-    const initialStatus: TripStatus = isStripePending ? 'pending_payment' : 'confirmed';
+    const initialStatus: TripStatus = isStripePending
+      ? 'pending_payment'
+      : tripData.assignedDriverId
+      ? 'ASSIGNED'
+      : 'NEW';
 
     const newTrip: Trip = {
       ...tripData,
@@ -374,18 +378,22 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return trips.find((t) => t.id === id);
   };
 
-  const assignDriverToTrip = (tripId: string, driverId: string) => {
+  const assignDriverToTrip = (tripId: string, driverId: string, customStatus?: TripStatus) => {
     const targetDriver = drivers.find((d) => d.id === driverId);
     const targetVehicle = vehicles.find((v) => v.id === targetDriver?.vehicleId) || vehicles[0];
     const targetTrip = trips.find((t) => t.id === tripId);
 
     const now = new Date().toISOString();
+    const statusToSet: TripStatus = customStatus || 'ASSIGNED';
+
     const updated = trips.map((t) => {
       if (t.id === tripId) {
         return {
           ...t,
           driverId,
           assignedDriverId: driverId,
+          acceptedBy: statusToSet === 'DRIVER_ACCEPTED' || statusToSet === 'accepted' ? driverId : t.acceptedBy,
+          acceptedAt: statusToSet === 'DRIVER_ACCEPTED' || statusToSet === 'accepted' ? now : t.acceptedAt,
           driverName: targetDriver?.name || 'Aron Sjåfør',
           driverPhone: targetDriver?.phone || '+47 96 99 09 01',
           vehicleId: targetDriver?.vehicleId || targetVehicle?.id || 'v1',
@@ -393,7 +401,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           vehicleLicensePlate: targetDriver?.vehiclePlate || targetVehicle?.licensePlate || 'EP 17891',
           permitNumber: targetDriver?.permitNumber || targetVehicle?.permitNumber || 'OS 10597',
           driverLocation: targetDriver?.currentLocation || { lat: 59.9139, lng: 10.7522 },
-          status: 'driver_assigned' as TripStatus,
+          status: statusToSet,
           updatedAt: now
         };
       }
@@ -405,8 +413,8 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Notify Customer on PC and mobile
     if (targetDriver) {
       notificationService.notify({
-        title: '🚗 Sjåfør på vei!',
-        message: `${targetDriver.name} i ${targetDriver.vehicleName || targetVehicle?.model || 'Tesla'} (${targetDriver.vehiclePlate || targetVehicle?.licensePlate || ''}) er på vei til hentepunktet.`,
+        title: '🚗 Sjåfør tildelt oppdrag',
+        message: `${targetDriver.name} i ${targetDriver.vehicleName || targetVehicle?.model || 'Tesla'} (${targetDriver.vehiclePlate || targetVehicle?.licensePlate || ''}) er koblet til turen.`,
         type: 'driver_assigned',
         targetRole: 'customer',
         targetUserId: targetTrip?.customerId,
@@ -429,7 +437,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Notify Driver
       notificationService.notify({
         title: '🎯 Oppdrag bekreftet',
-        message: `Du er tildelt tur for ${targetTrip?.customerName || 'kunde'} til ${targetTrip?.pickup?.address || 'Hentested'}.`,
+        message: `Du har oppdrag for ${targetTrip?.customerName || 'kunde'} til ${targetTrip?.pickup?.address || 'Hentested'}.`,
         type: 'driver_assigned',
         targetRole: 'driver',
         targetUserId: driverId,
@@ -460,6 +468,8 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const tripUpdates: Partial<Trip> = {
       driverId,
       assignedDriverId: driverId,
+      acceptedBy: driverId,
+      acceptedAt: now,
       driverName: targetDriver.name,
       driverPhone: targetDriver.phone,
       vehicleId: targetDriver.vehicleId || targetVehicle?.id || 'v1',
@@ -467,7 +477,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       vehicleLicensePlate: targetDriver.vehiclePlate || targetVehicle?.licensePlate || 'EP 17891',
       permitNumber: targetDriver.permitNumber || targetVehicle?.permitNumber || 'OS 10597',
       driverLocation: targetDriver.currentLocation || { lat: 59.9139, lng: 10.7522 },
-      status: 'driver_assigned',
+      status: 'DRIVER_ACCEPTED',
       updatedAt: now
     };
 
@@ -478,7 +488,6 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await runTransaction(db, async (transaction) => {
         const tripDoc = await transaction.get(tripRef);
         if (!tripDoc.exists()) {
-          // If the document doesn't exist in Firestore yet, but is available locally, write it directly!
           if (localTrip) {
             transaction.set(tripRef, removeUndefinedFields({
               ...localTrip,
@@ -490,12 +499,16 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
 
         const data = tripDoc.data() as Trip;
-        // Verify trip is still unassigned / waiting for driver or already assigned to this driver
+        // Verify trip is not already taken by another driver
         if (data.driverId && data.driverId !== driverId) {
           throw new Error('Turen ble nettopp tatt av en annen sjåfør.');
         }
-        const validStatuses: TripStatus[] = ['pending', 'requested', 'searching_driver', 'driver_assigned', 'accepted'];
-        if (data.status && !validStatuses.includes(data.status)) {
+        if (
+          data.status === 'COMPLETED' ||
+          data.status === 'completed' ||
+          data.status === 'CANCELLED' ||
+          data.status === 'cancelled'
+        ) {
           throw new Error('Denne turen er ikke lenger tilgjengelig.');
         }
 
@@ -504,19 +517,17 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
 
       // Update local state and notify storage
-      assignDriverToTrip(tripId, driverId);
+      assignDriverToTrip(tripId, driverId, 'DRIVER_ACCEPTED');
       return { success: true };
     } catch (err: any) {
       console.warn('Accept trip transaction error / fallback:', err.message);
 
-      // If another driver actually took the trip concurrently, respect that
       if (err.message === 'Turen ble nettopp tatt av en annen sjåfør.') {
         return { success: false, error: err.message };
       }
 
-      // If we have the trip locally, apply assignment gracefully so driver is never blocked
       if (localTrip) {
-        assignDriverToTrip(tripId, driverId);
+        assignDriverToTrip(tripId, driverId, 'DRIVER_ACCEPTED');
         try {
           const mergedTrip: Trip = {
             ...localTrip,
@@ -533,21 +544,53 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // Reject trip for a single driver (adds driverId to rejectedDriverIds)
+  // Reject trip for a driver (marks DRIVER_DECLINED, saves timestamp and audit, prevents re-popup)
   const rejectTrip = async (tripId: string, driverId: string) => {
-    const target = trips.find(t => t.id === tripId);
-    if (!target) return;
+    const target = trips.find((t) => t.id === tripId || t.tripId === tripId);
+    const now = new Date().toISOString();
 
-    const currentRejected = target.rejectedDriverIds || [];
-    if (!currentRejected.includes(driverId)) {
-      const updatedRejected = [...currentRejected, driverId];
-      const updated = trips.map(t => t.id === tripId ? { ...t, rejectedDriverIds: updatedRejected } : t);
-      saveTrips(updated);
-      try {
-        await setDoc(doc(db, 'trips', tripId), { rejectedDriverIds: updatedRejected }, { merge: true });
-      } catch (err) {
-        console.warn('Reject trip write error:', err);
+    const currentRejected = target?.rejectedDriverIds || [];
+    const updatedRejected = currentRejected.includes(driverId)
+      ? currentRejected
+      : [...currentRejected, driverId];
+
+    const isDirectlyAssigned = target?.assignedDriverId === driverId || target?.driverId === driverId;
+    const nextStatus: TripStatus = isDirectlyAssigned ? 'DRIVER_DECLINED' : (target?.status || 'DRIVER_DECLINED');
+
+    const updated = trips.map((t) => {
+      if (t.id === tripId || t.tripId === tripId) {
+        return {
+          ...t,
+          status: nextStatus,
+          rejectedDriverIds: updatedRejected,
+          declinedAt: now,
+          declinedBy: driverId,
+          driverId: isDirectlyAssigned ? undefined : t.driverId,
+          assignedDriverId: isDirectlyAssigned ? undefined : t.assignedDriverId,
+          updatedAt: now
+        };
       }
+      return t;
+    });
+
+    saveTrips(updated);
+
+    try {
+      const cleanUpdate: any = {
+        rejectedDriverIds: updatedRejected,
+        declinedAt: now,
+        declinedBy: driverId,
+        updatedAt: now
+      };
+      if (isDirectlyAssigned) {
+        cleanUpdate.status = 'DRIVER_DECLINED';
+        cleanUpdate.driverId = null;
+        cleanUpdate.assignedDriverId = null;
+      }
+      await setDoc(doc(db, 'trips', tripId), cleanUpdate, { merge: true });
+      console.log('✅ Tur avvist (DRIVER_DECLINED) i Firestore:', tripId, 'av sjåfør:', driverId);
+    } catch (err) {
+      console.warn('Reject trip write error:', err);
     }
   };
 
@@ -676,20 +719,38 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const updateTripStatus = (tripId: string, status: TripStatus, location?: { lat: number; lng: number }) => {
     const now = new Date().toISOString();
-    const targetTrip = trips.find(t => t.id === tripId);
+    const targetTrip = trips.find(t => t.id === tripId || t.tripId === tripId);
 
-    const isComp = status === 'completed';
+    const isComp = status === 'completed' || status === 'COMPLETED';
     const finalP = isComp ? (targetTrip?.estimatedPrice || 0) : targetTrip?.finalPrice;
 
+    const isCashTrip = targetTrip?.paymentMethod === 'cash' || targetTrip?.paymentMethod === 'terminal';
+    const nextPaymentStatus = (isComp && isCashTrip) ? 'paid' : targetTrip?.paymentStatus;
+    const nextPaidAt = (isComp && isCashTrip && !targetTrip?.paidAt) ? now : targetTrip?.paidAt;
+
+    const normalizedStatus: TripStatus = isComp
+      ? 'completed'
+      : status === 'DRIVER_ARRIVED' || status === 'driver_arrived'
+      ? 'driver_arrived'
+      : status === 'IN_PROGRESS' || status === 'trip_started' || status === 'active'
+      ? 'trip_started'
+      : status === 'CANCELLED' || status === 'cancelled'
+      ? 'cancelled'
+      : status === 'DRIVER_DECLINED' || status === 'rejected'
+      ? 'rejected'
+      : status;
+
     const updated = trips.map((t) => {
-      if (t.id === tripId) {
+      if (t.id === tripId || t.tripId === tripId) {
         return {
           ...t,
-          status,
+          status: normalizedStatus,
           finalPrice: finalP || t.estimatedPrice,
+          paymentStatus: nextPaymentStatus || t.paymentStatus,
+          paidAt: nextPaidAt,
           driverLocation: location || t.driverLocation,
           updatedAt: now,
-          completedAt: isComp ? now : t.completedAt
+          completedAt: isComp ? (t.completedAt || now) : t.completedAt
         };
       }
       return t;
@@ -698,7 +759,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     saveTrips(updated);
 
     // Real-time notifications for customer, driver, and admin across devices
-    if (status === 'driver_arrived') {
+    if (normalizedStatus === 'driver_arrived') {
       // Customer: friendly chime & double buzz
       notificationService.notify({
         title: '📍 Sjåføren er fremme!',
@@ -721,7 +782,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         actionUrl: '/admin',
         soundType: 'ping'
       });
-    } else if (status === 'trip_started' || status === 'active') {
+    } else if (normalizedStatus === 'trip_started') {
       // Customer: trip started acceleration tone
       notificationService.notify({
         title: '🛣️ Turen har startet',
@@ -744,7 +805,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         actionUrl: '/admin',
         soundType: 'ping'
       });
-    } else if (status === 'completed') {
+    } else if (normalizedStatus === 'completed') {
       const price = targetTrip?.estimatedPrice || 0;
       const driverEarn = Math.round(price * 0.85);
 
@@ -782,7 +843,7 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         actionUrl: '/admin',
         soundType: 'completed'
       });
-    } else if (status === 'cancelled') {
+    } else if (normalizedStatus === 'cancelled') {
       // Customer
       notificationService.notify({
         title: '❌ Tur kansellert',
@@ -921,16 +982,60 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const cancelTrip = async (tripId: string, reason: string = 'Kansellert') => {
-    updateTripStatus(tripId, 'cancelled');
+  const cancelTrip = async (tripId: string, reason: string = 'Kansellert', cancelledBy: string = 'driver') => {
+    const now = new Date().toISOString();
+    const targetTrip = trips.find(t => t.id === tripId || t.tripId === tripId);
+
+    const updated = trips.map((t) => {
+      if (t.id === tripId || t.tripId === tripId) {
+        return {
+          ...t,
+          status: 'cancelled' as TripStatus,
+          cancellationReason: reason,
+          cancelledBy,
+          cancelledAt: now,
+          updatedAt: now
+        };
+      }
+      return t;
+    });
+    saveTrips(updated);
+
+    // Notify Customer
+    if (targetTrip?.customerId) {
+      notificationService.notify({
+        title: '❌ Bestilling kansellert',
+        message: `Turen ${tripId} ble kansellert (${reason}).`,
+        type: 'trip_cancelled',
+        targetRole: 'customer',
+        targetUserId: targetTrip.customerId,
+        tripId: tripId,
+        soundType: 'cancel'
+      });
+    }
+
+    // Notify Admin
+    notificationService.notify({
+      title: '⚠️ Tur kansellert av sjåfør',
+      message: `Tur ${tripId} (${targetTrip?.customerName || 'Kunde'}) ble kansellert: ${reason}.`,
+      type: 'trip_cancelled',
+      targetRole: 'admin',
+      tripId: tripId,
+      actionUrl: '/admin',
+      soundType: 'cancel'
+    });
+
     try {
       await setDoc(doc(db, 'trips', tripId), {
         status: 'cancelled',
         cancellationReason: reason,
-        cancelledAt: new Date().toISOString()
+        cancelledBy,
+        cancelledAt: now,
+        updatedAt: now
       }, { merge: true });
+      console.log('✅ Tur kansellert i Firestore:', tripId, 'grunn:', reason);
     } catch (e) {
-      console.warn('Cancel trip error:', e);
+      console.warn('Cancel trip Firestore error:', e);
     }
   };
 

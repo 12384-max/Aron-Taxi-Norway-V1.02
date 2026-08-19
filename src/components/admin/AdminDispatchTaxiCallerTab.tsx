@@ -700,15 +700,37 @@ export const AdminDispatchTaxiCallerTab: React.FC<AdminDispatchTaxiCallerTabProp
                       {/* Status */}
                       <td className="py-3">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
-                          t.status === 'completed'
+                          t.status === 'completed' || t.status === 'COMPLETED'
                             ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                            : t.status === 'trip_started'
+                            : t.status === 'trip_started' || t.status === 'IN_PROGRESS' || t.status === 'active'
                             ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                            : t.status === 'driver_assigned' || t.status === 'accepted'
+                            : t.status === 'driver_arrived' || t.status === 'DRIVER_ARRIVED'
+                            ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                            : t.status === 'driver_assigned' || t.status === 'ASSIGNED' || t.status === 'accepted' || t.status === 'DRIVER_ACCEPTED'
                             ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                            : t.status === 'DRIVER_DECLINED' || t.status === 'rejected'
+                            ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            : t.status === 'cancelled' || t.status === 'CANCELLED'
+                            ? 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
                             : 'bg-white/10 text-slate-300'
                         }`}>
-                          {t.status === 'completed' ? 'Fullført' : t.status === 'trip_started' ? 'Kjører' : t.status === 'driver_assigned' ? 'Tildelt' : t.status === 'pending' ? 'Venter' : t.status}
+                          {t.status === 'completed' || t.status === 'COMPLETED'
+                            ? 'Fullført'
+                            : t.status === 'trip_started' || t.status === 'IN_PROGRESS'
+                            ? 'Kjører'
+                            : t.status === 'driver_arrived' || t.status === 'DRIVER_ARRIVED'
+                            ? 'Ankommet'
+                            : t.status === 'DRIVER_ACCEPTED' || t.status === 'accepted'
+                            ? 'Akseptert'
+                            : t.status === 'ASSIGNED' || t.status === 'driver_assigned'
+                            ? 'Tildelt'
+                            : t.status === 'DRIVER_DECLINED' || t.status === 'rejected'
+                            ? 'Avslått'
+                            : t.status === 'CANCELLED' || t.status === 'cancelled'
+                            ? 'Kansellert'
+                            : t.status === 'NEW' || t.status === 'pending' || t.status === 'requested'
+                            ? 'Ny ordre'
+                            : t.status}
                         </span>
                       </td>
 

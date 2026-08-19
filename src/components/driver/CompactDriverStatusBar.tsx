@@ -5,7 +5,9 @@ interface CompactDriverStatusBarProps {
   isOnline: boolean;
   todayNet: number;
   todayTripsCount: number;
-  driverScore: number | string;
+  acceptanceRate?: string;
+  points?: number;
+  tierName?: string;
   onlineDurationText: string;
   vehicleName: string;
   vehiclePlate: string;
@@ -17,7 +19,9 @@ export const CompactDriverStatusBar: React.FC<CompactDriverStatusBarProps> = ({
   isOnline,
   todayNet,
   todayTripsCount,
-  driverScore,
+  acceptanceRate = '0%',
+  points = 0,
+  tierName = 'Sølv',
   onlineDurationText,
   vehicleName,
   vehiclePlate,
@@ -69,10 +73,10 @@ export const CompactDriverStatusBar: React.FC<CompactDriverStatusBarProps> = ({
 
       <div className="h-6 w-px bg-white/10 shrink-0" />
 
-      {/* 4. Sjåførscore */}
+      {/* 4. Akseptgrad & Nivå (Ekte data) */}
       <div className="text-left">
-        <span className="text-[9px] text-slate-400 block font-medium">Sjåførscore</span>
-        <span className="text-xs sm:text-sm font-black text-white font-mono">{driverScore}</span>
+        <span className="text-[9px] text-slate-400 block font-medium">Akseptgrad ({tierName})</span>
+        <span className="text-xs sm:text-sm font-black text-emerald-400 font-mono">{acceptanceRate}</span>
       </div>
 
     </div>
