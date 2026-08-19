@@ -41,7 +41,13 @@ export const DriverLoginPage: React.FC = () => {
         <div className="max-w-md w-full bg-[#121722]/95 border border-white/10 rounded-3xl p-7 sm:p-9 shadow-2xl space-y-6 backdrop-blur-xl">
           
           {/* HEADER BRANDING */}
-          <div className="text-center space-y-2">
+          <div className="text-center space-y-3">
+            <img
+              src={OFFICIAL_ASSETS.logo}
+              alt="Aron Taxi Norway"
+              referrerPolicy="no-referrer"
+              className="h-16 w-16 rounded-2xl object-cover border border-[#D4AF37]/40 shadow-lg shadow-amber-500/10 mx-auto"
+            />
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37] text-[10px] font-bold tracking-widest uppercase">
               <ShieldCheck className="w-3.5 h-3.5" />
               ARON TAXI NORWAY · DRIVER APP

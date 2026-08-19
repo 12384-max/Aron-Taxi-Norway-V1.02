@@ -7,21 +7,24 @@ import { useTrips } from '../context/TripContext';
 import { Trip, Driver, Vehicle } from '../types';
 import { soundService } from '../services/sound';
 
-// Bolt Driver Components
+// Driver Components
+import { DriverBottomNav, DriverNavTab } from '../components/driver/DriverBottomNav';
+import { DriverVehiclesView } from '../components/driver/DriverVehiclesView';
+import { DriverBookingsView } from '../components/driver/DriverBookingsView';
+import { DriverAccountView } from '../components/driver/DriverAccountView';
+import { CompactDriverStatusBar } from '../components/driver/CompactDriverStatusBar';
+import { NewTripRequestCard } from '../components/driver/NewTripRequestCard';
+import { TripStatusOverlay } from '../components/driver/TripStatusOverlay';
+
+// Modals
 import { BoltDriverDrawer } from '../components/driver/BoltDriverDrawer';
 import { BoltSafetyModal } from '../components/driver/BoltSafetyModal';
 import { BoltPreferencesModal } from '../components/driver/BoltPreferencesModal';
 import { BoltDestinationModal } from '../components/driver/BoltDestinationModal';
 import { BoltSurgeModal } from '../components/driver/BoltSurgeModal';
 import { BoltEarningsView } from '../components/driver/BoltEarningsView';
-import { BoltEarnMoreView } from '../components/driver/BoltEarnMoreView';
-import { BoltRidesView } from '../components/driver/BoltRidesView';
-import { BoltHelpView } from '../components/driver/BoltHelpView';
 import { BoltScheduledRidesModal } from '../components/driver/BoltScheduledRidesModal';
 import { BoltCampaignsModal } from '../components/driver/BoltCampaignsModal';
-import { CompactDriverStatusBar } from '../components/driver/CompactDriverStatusBar';
-import { NewTripRequestCard } from '../components/driver/NewTripRequestCard';
-import { TripStatusOverlay } from '../components/driver/TripStatusOverlay';
 
 import {
   Menu,
@@ -29,20 +32,10 @@ import {
   Zap,
   Flame,
   Navigation,
-  Sliders,
   Crosshair,
-  ChevronRight,
-  Clock,
-  Check,
-  X,
-  Phone,
-  MessageSquare,
-  MapPin,
-  Car,
-  Trash2,
   Volume2,
   VolumeX,
-  Radio
+  X
 } from 'lucide-react';
 
 const OSLO_HOTSPOTS = [
@@ -70,18 +63,19 @@ export const DriverDashboardPage: React.FC = () => {
     deleteTrip,
     cancelTrip,
     triggerEmergencyAlert,
+    createTrip
   } = useTrips();
 
-  // Find driver object (Aron / Tariq or logged in)
+  // Find driver object (Aron / logged in driver)
   const currentDriver: Driver | undefined =
     drivers.find(
       (d) => d.id === user?.uid || d.email?.toLowerCase() === user?.email?.toLowerCase()
     ) || drivers[0];
 
-  // Active Bottom Tab: 'home' | 'earn_more' | 'rides' | 'help'
-  const [activeTab, setActiveTab] = useState<'home' | 'earn_more' | 'rides' | 'help'>('home');
+  // Active Bottom Tab: 'vehicles' | 'bookings' | 'driver' | 'account'
+  const [navTab, setNavTab] = useState<DriverNavTab>('driver');
 
-  // Modals & Sub-views
+  // Modals
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [showSafetyModal, setShowSafetyModal] = useState(false);
   const [showPreferencesModal, setShowPreferencesModal] = useState(false);
@@ -90,15 +84,15 @@ export const DriverDashboardPage: React.FC = () => {
   const [showScheduledModal, setShowScheduledModal] = useState(false);
   const [showCampaignsModal, setShowCampaignsModal] = useState(false);
   const [showEarningsView, setShowEarningsView] = useState(false);
+  const [showSmsModal, setShowSmsModal] = useState(false);
 
   // States
-  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(false);
   const [activeDestination, setActiveDestination] = useState<string>('');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [incomingCountdown, setIncomingCountdown] = useState(18);
   const [waitingSeconds, setWaitingSeconds] = useState(0);
   const [onlineSeconds, setOnlineSeconds] = useState(0);
-  const [showSmsModal, setShowSmsModal] = useState(false);
 
   const prevPendingCount = useRef<number>(0);
 
@@ -132,7 +126,7 @@ export const DriverDashboardPage: React.FC = () => {
     return `${mins}m ${secs}s`;
   };
 
-  // Incoming pending trips in Oslo
+  // Incoming pending trips in Oslo (Real database orders only)
   const pendingTrips = trips.filter(
     (t) =>
       (t.status === 'pending' ||
@@ -157,7 +151,7 @@ export const DriverDashboardPage: React.FC = () => {
       t.status !== 'rejected'
   );
 
-  // Completed trips by this driver
+  // Completed trips by this driver (Strictly real from database)
   const myCompletedTrips = trips.filter(
     (t) => t.driverId === currentDriver?.id && t.status === 'completed'
   );
@@ -263,6 +257,7 @@ export const DriverDashboardPage: React.FC = () => {
     const res = await acceptTripAtomic(tripId, currentDriver.id);
     if (res.success) {
       toast.success('Tur godtatt! Naviger til henteadresse.');
+      setNavTab('driver');
       if (soundEnabled) soundService.playTripAcceptedSound(0.8);
     } else {
       toast.error(res.error || 'Kunne ikke godta turen.');
@@ -393,15 +388,15 @@ export const DriverDashboardPage: React.FC = () => {
   const mapRouteGeometry = activeTrip?.routeGeometry || incomingRequest?.routeGeometry;
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-[#10141E] text-white flex flex-col font-sans select-none">
+    <div className="relative h-screen w-screen overflow-hidden bg-[#0A0E17] text-white flex flex-col font-sans select-none">
       
-      {/* 1. TOP FLOATING APP BAR (Ultra-compact & high contrast) */}
+      {/* 1. TOP FLOATING APP BAR (Always accessible on map and views) */}
       <div className="absolute top-0 left-0 right-0 z-30 p-3 sm:p-4 flex items-center justify-between pointer-events-none">
         
         {/* Left: Hamburger Button */}
         <button
           onClick={() => setIsDrawerOpen(true)}
-          className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-[#151B28]/95 hover:bg-[#1C2538] backdrop-blur-md border border-white/10 text-white shadow-xl flex items-center justify-center pointer-events-auto cursor-pointer transition-transform active:scale-95"
+          className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-[#121724]/95 hover:bg-[#1A2234] backdrop-blur-md border border-white/10 text-white shadow-xl flex items-center justify-center pointer-events-auto cursor-pointer transition-transform active:scale-95"
           title="Meny"
         >
           <Menu className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -412,7 +407,7 @@ export const DriverDashboardPage: React.FC = () => {
           onClick={handleToggleOnline}
           className={`pointer-events-auto px-4 sm:px-6 py-2.5 rounded-full font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-2xl cursor-pointer active:scale-95 ${
             currentDriver?.isOnline
-              ? 'bg-[#151B28]/95 hover:bg-[#1C2538] text-white border-2 border-emerald-500 shadow-emerald-500/20'
+              ? 'bg-[#121724]/95 hover:bg-[#1A2234] text-white border-2 border-emerald-500 shadow-emerald-500/20'
               : 'bg-[#34D186] hover:bg-[#2EB875] text-slate-950 shadow-emerald-500/30 ring-4 ring-emerald-500/20'
           }`}
         >
@@ -438,7 +433,7 @@ export const DriverDashboardPage: React.FC = () => {
               setSoundEnabled(!soundEnabled);
               toast.info(soundEnabled ? 'Lydvarsler deaktivert' : 'Lydvarsler aktivert 🔔');
             }}
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#151B28]/95 hover:bg-[#1C2538] backdrop-blur-md border border-white/10 text-slate-300 shadow-xl flex items-center justify-center cursor-pointer transition-transform active:scale-95"
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#121724]/95 hover:bg-[#1A2234] backdrop-blur-md border border-white/10 text-slate-300 shadow-xl flex items-center justify-center cursor-pointer transition-transform active:scale-95"
             title={soundEnabled ? 'Deaktiver lyd' : 'Aktiver lyd'}
           >
             {soundEnabled ? <Volume2 className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" /> : <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-slate-500" />}
@@ -446,11 +441,11 @@ export const DriverDashboardPage: React.FC = () => {
 
           <button
             onClick={() => setShowSafetyModal(true)}
-            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#151B28]/95 hover:bg-[#1C2538] backdrop-blur-md border border-white/10 text-slate-200 shadow-xl flex items-center justify-center cursor-pointer relative transition-transform active:scale-95"
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#121724]/95 hover:bg-[#1A2234] backdrop-blur-md border border-white/10 text-slate-200 shadow-xl flex items-center justify-center cursor-pointer relative transition-transform active:scale-95"
             title="Sikkerhetsverktøy (SOS)"
           >
             <Shield className="w-4 h-4 sm:w-5 sm:h-5 text-slate-300" />
-            <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-500 border border-[#151B28]" />
+            <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-rose-500 border border-[#121724]" />
           </button>
         </div>
 
@@ -459,8 +454,8 @@ export const DriverDashboardPage: React.FC = () => {
       {/* MAIN VIEW CONTAINER */}
       <div className="flex-1 relative w-full h-full overflow-hidden">
 
-        {/* VIEW 1: HOME (FULLSCREEN MAP + MINIMAL HUD) */}
-        {activeTab === 'home' && (
+        {/* 1. TAB: DRIVER (FULLSCREEN MAP + HUD + COMPACT POPUPS) */}
+        {navTab === 'driver' && (
           <div className="relative w-full h-full">
             
             {/* FULLSCREEN LEAFLET MAP - 100% Kant-til-kant */}
@@ -489,7 +484,7 @@ export const DriverDashboardPage: React.FC = () => {
               />
             </div>
 
-            {/* 2. COMPACT STATUS OVERLAY (When Online & No Trip Request & No Active Trip) */}
+            {/* COMPACT STATUS OVERLAY (When Online & No Trip Request & No Active Trip) */}
             {currentDriver?.isOnline && !incomingRequest && !activeTrip && (
               <div className="absolute top-18 sm:top-20 inset-x-3 sm:inset-x-6 z-20 pointer-events-auto animate-in slide-in-from-top duration-200">
                 <CompactDriverStatusBar
@@ -499,21 +494,21 @@ export const DriverDashboardPage: React.FC = () => {
                   driverScore="100%"
                   onlineDurationText={formatOnlineDuration(onlineSeconds)}
                   vehicleName={currentVehicle?.model || 'Tesla Model Y'}
-                  vehiclePlate={currentVehicle?.licensePlate || 'EL 98450'}
+                  vehiclePlate={currentVehicle?.licensePlate || 'EP 17891'}
                   onOpenEarnings={() => setShowEarningsView(true)}
-                  onOpenTrips={() => setActiveTab('rides')}
+                  onOpenTrips={() => setNavTab('bookings')}
                 />
               </div>
             )}
 
-            {/* 3. MAP UTILITIES (Surge & GPS Controls) */}
-            <div className="absolute left-3 sm:left-4 bottom-4 z-20 flex gap-2 pointer-events-auto">
+            {/* MAP UTILITIES (Surge & GPS Controls) */}
+            <div className="absolute left-3 sm:left-4 bottom-20 z-20 flex gap-2 pointer-events-auto">
               <button
                 onClick={() => setShowSurgeModal(true)}
                 className={`h-10 sm:h-11 px-3 rounded-2xl backdrop-blur-md border shadow-xl flex items-center gap-1.5 transition-transform active:scale-95 cursor-pointer ${
                   showHeatmap
-                    ? 'bg-[#151B28]/95 border-amber-500/50 text-amber-400'
-                    : 'bg-[#151B28]/90 border-white/10 text-slate-400 hover:text-white'
+                    ? 'bg-[#121724]/95 border-amber-500/50 text-amber-400'
+                    : 'bg-[#121724]/90 border-white/10 text-slate-400 hover:text-white'
                 }`}
                 title="Surge / Varmekart"
               >
@@ -523,16 +518,16 @@ export const DriverDashboardPage: React.FC = () => {
 
               <button
                 onClick={handleRecenterGPS}
-                className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#151B28]/95 hover:bg-[#1C2538] backdrop-blur-md border border-white/10 text-emerald-400 shadow-xl flex items-center justify-center transition-transform active:scale-95 cursor-pointer"
+                className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#121724]/95 hover:bg-[#1A2234] backdrop-blur-md border border-white/10 text-emerald-400 shadow-xl flex items-center justify-center transition-transform active:scale-95 cursor-pointer"
                 title="Sentrér GPS på kartet"
               >
                 <Crosshair className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
 
-            {/* 4. NEW TRIP REQUEST CARD OVERLAY (PC: Right-side panel, Mobile: Bottom sheet) */}
+            {/* COMPACT NEW TRIP REQUEST CARD (Above Bottom Navigation) */}
             {currentDriver?.isOnline && !activeTrip && incomingRequest && (
-              <div className="absolute inset-x-3 bottom-4 md:bottom-auto md:top-20 md:right-6 md:left-auto md:w-96 z-30 pointer-events-auto animate-in slide-in-from-right duration-300">
+              <div className="absolute inset-x-3 bottom-20 md:bottom-auto md:top-20 md:right-6 md:left-auto md:w-96 z-30 pointer-events-auto animate-in slide-in-from-right duration-300">
                 <NewTripRequestCard
                   trip={incomingRequest}
                   countdown={incomingCountdown}
@@ -543,9 +538,9 @@ export const DriverDashboardPage: React.FC = () => {
               </div>
             )}
 
-            {/* 5. ACTIVE TRIP REAL-TIME STATUS STEPS OVERLAY (PC: Right-side panel, Mobile: Bottom sheet) */}
+            {/* COMPACT ACTIVE TRIP STATUS STEPS OVERLAY (Above Bottom Navigation) */}
             {activeTrip && (
-              <div className="absolute inset-x-3 bottom-4 md:bottom-auto md:top-20 md:right-6 md:left-auto md:w-96 z-30 pointer-events-auto animate-in slide-in-from-right duration-300">
+              <div className="absolute inset-x-3 bottom-20 md:bottom-auto md:top-20 md:right-6 md:left-auto md:w-96 z-30 pointer-events-auto animate-in slide-in-from-right duration-300">
                 <TripStatusOverlay
                   trip={activeTrip}
                   currentDriver={currentDriver}
@@ -563,32 +558,62 @@ export const DriverDashboardPage: React.FC = () => {
           </div>
         )}
 
-        {/* VIEW 2: EARN MORE (Bonuses & Campaigns) */}
-        {activeTab === 'earn_more' && (
-          <BoltEarnMoreView
-            onBack={() => setActiveTab('home')}
-            onOpenCampaigns={() => setShowCampaignsModal(true)}
-            onOpenScheduled={() => setShowScheduledModal(true)}
-          />
+        {/* 2. TAB: BILER (Vehicles & Fleet Management) */}
+        {navTab === 'vehicles' && (
+          <div className="h-full pt-16">
+            <DriverVehiclesView
+              currentDriver={currentDriver}
+              vehicles={vehicles}
+              onSelectVehicle={selectDriverVehicle}
+            />
+          </div>
         )}
 
-        {/* VIEW 3: RIDES (History & Details) */}
-        {activeTab === 'rides' && (
-          <BoltRidesView
-            trips={myCompletedTrips}
-            onBack={() => setActiveTab('home')}
-          />
+        {/* 3. TAB: BESTILL (Orders & Bookings Central) */}
+        {navTab === 'bookings' && (
+          <div className="h-full pt-16">
+            <DriverBookingsView
+              trips={trips}
+              currentDriver={currentDriver}
+              currentVehicle={currentVehicle}
+              onAcceptTrip={handleAcceptTrip}
+              onRejectTrip={handleRejectTrip}
+              onDeleteTrip={handleDeleteTripDirect}
+              onCreateStreetTrip={createTrip}
+              onOpenTripOnMap={(trip) => {
+                setNavTab('driver');
+              }}
+            />
+          </div>
         )}
 
-        {/* VIEW 4: HELP & SUPPORT */}
-        {activeTab === 'help' && (
-          <BoltHelpView
-            onBack={() => setActiveTab('home')}
-            driverPhone={currentDriver?.phone || '+47 96 99 09 01'}
-          />
+        {/* 4. TAB: KONTO (Driver Profile & Real Earnings) */}
+        {navTab === 'account' && (
+          <div className="h-full pt-16">
+            <DriverAccountView
+              currentDriver={currentDriver}
+              currentVehicle={currentVehicle}
+              completedTrips={myCompletedTrips}
+              soundEnabled={soundEnabled}
+              onToggleSound={() => setSoundEnabled(!soundEnabled)}
+              onLogout={() => {
+                logout();
+                navigate('/sjafor/login');
+              }}
+            />
+          </div>
         )}
 
       </div>
+
+      {/* 2. FIXED BOTTOM NAVIGATION BAR (Sticky at bottom, always available) */}
+      <DriverBottomNav
+        activeTab={navTab}
+        onSelectTab={setNavTab}
+        pendingCount={pendingTrips.length}
+        hasActiveTrip={Boolean(activeTrip)}
+        isOnline={Boolean(currentDriver?.isOnline)}
+      />
 
       {/* QUICK SMS MODAL */}
       {showSmsModal && activeTrip && (
@@ -596,26 +621,26 @@ export const DriverDashboardPage: React.FC = () => {
           <div className="bg-[#121722] border border-white/10 rounded-3xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-sm text-white">Hurtigmelding til passasjer</h3>
-              <button onClick={() => setShowSmsModal(false)} className="p-1 text-slate-400 hover:text-white">
+              <button onClick={() => setShowSmsModal(false)} className="p-1 text-slate-400 hover:text-white cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
             <div className="space-y-2">
               <button
                 onClick={() => handleSendQuickSms('Hei! Din Aron Taxi VIP sjåfør er på vei og ankommer om ca 3 min.')}
-                className="w-full text-left p-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-slate-200"
+                className="w-full text-left p-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-slate-200 cursor-pointer"
               >
                 «Er på vei, ankommer om ca 3 min»
               </button>
               <button
                 onClick={() => handleSendQuickSms('Hei! Jeg har ankommet henteadressen og venter utenfor i en ' + (currentVehicle?.model || 'Tesla Model Y') + '.')}
-                className="w-full text-left p-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-slate-200"
+                className="w-full text-left p-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-slate-200 cursor-pointer"
               >
                 «Jeg er ankommet og venter utenfor»
               </button>
               <button
                 onClick={() => handleSendQuickSms('Hei! Det er litt trafikk, ankommer henteadresse om 5 minutter.')}
-                className="w-full text-left p-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-slate-200"
+                className="w-full text-left p-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-slate-200 cursor-pointer"
               >
                 «Litt trafikk, ankommer om 5 minutter»
               </button>

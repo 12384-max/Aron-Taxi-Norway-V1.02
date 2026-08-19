@@ -489,31 +489,23 @@ export const AdminDispatchTaxiCallerTab: React.FC<AdminDispatchTaxiCallerTabProp
               </div>
             </div>
 
-            {/* Action Buttons: Check, Book, Clear */}
-            <div className="grid grid-cols-3 gap-2 pt-2">
+            {/* Action Buttons: Check, Send til Sjåfør, Clear */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2">
               <button
                 type="button"
                 onClick={handleCheckRoute}
-                className="py-2.5 bg-white/10 hover:bg-white/15 text-slate-200 font-bold text-xs rounded-xl border border-white/10 transition-all cursor-pointer"
+                className="py-2.5 bg-white/10 hover:bg-white/15 text-slate-200 font-bold text-xs rounded-xl border border-white/10 transition-all cursor-pointer text-center"
               >
-                Check
+                Beregn Rute
               </button>
 
               <button
                 type="button"
                 onClick={handleBookTrip}
-                className="py-2.5 bg-[#E5B83B] hover:bg-[#d4a82b] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                className="py-3 sm:col-span-2 bg-[#E5B83B] hover:bg-[#d4a82b] text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/20 transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-95"
               >
-                <Zap className="w-3.5 h-3.5 fill-slate-950" />
-                <span>Book</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleClearForm}
-                className="py-2.5 bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 font-bold text-xs rounded-xl border border-white/5 transition-all cursor-pointer"
-              >
-                Clear
+                <Zap className="w-4 h-4 fill-slate-950" />
+                <span>SEND BESTILLING TIL SJÅFØR</span>
               </button>
             </div>
 

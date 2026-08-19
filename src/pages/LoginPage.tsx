@@ -149,7 +149,12 @@ export const LoginPage: React.FC = () => {
           
           {/* LOGO */}
           <div className="text-center space-y-2">
-            <img src={OFFICIAL_ASSETS.logo} alt="Aron Taxi Norway" className="h-12 w-auto mx-auto" />
+            <img
+              src={OFFICIAL_ASSETS.logo}
+              alt="Aron Taxi Norway"
+              referrerPolicy="no-referrer"
+              className="h-16 w-16 rounded-2xl object-cover border border-[#D4AF37]/40 shadow-lg shadow-amber-500/10 mx-auto"
+            />
             <h1 className="font-display text-2xl font-bold text-[#F5F2ED]">
               Aron Taxi Innlogging
             </h1>
