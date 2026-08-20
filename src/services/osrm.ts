@@ -13,7 +13,7 @@ export interface RouteResult {
   geometry: [number, number][]; // [lat, lng]
 }
 
-const POPULAR_PRESETS: GeocodeResult[] = [
+export const POPULAR_PRESETS: GeocodeResult[] = [
   { address: 'Oslo S / Jernbanetorget, 0154 Oslo', lat: 59.9111, lng: 10.7528 },
   { address: 'Oslo Lufthavn Gardermoen (OSL), 2060 Gardermoen', lat: 60.1975, lng: 11.1004 },
   { address: 'Karl Johans gate, 0159 Oslo', lat: 59.9139, lng: 10.7410 },
@@ -208,4 +208,112 @@ export function calculateTripPrice(
     driverPayout,
     isNight
   };
+}
+
+/**
+ * Reverse geocodes coordinates (lat, lng) to a human-readable Norwegian street address
+ */
+export async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  // 1. Try Nominatim Reverse API
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+    const response = await fetch(url, {
+      headers: {
+        'Accept-Language': 'no, nb, nn, en'
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.address) {
+        const a = data.address;
+        const street = a.road || a.pedestrian || a.street || a.neighbourhood || a.suburb;
+        const houseNumber = a.house_number || '';
+        const city = a.city || a.town || a.municipality || a.village || a.county || 'Oslo';
+        const postcode = a.postcode || '';
+
+        if (street) {
+          const streetPart = houseNumber ? `${street} ${houseNumber}` : street;
+          const cityPart = postcode ? `${postcode} ${city}` : city;
+          return `${streetPart}, ${cityPart}`;
+        }
+
+        if (data.display_name) {
+          // Take first 2-3 parts of display_name
+          const parts = data.display_name.split(',').map((p: string) => p.trim());
+          return parts.slice(0, 3).join(', ');
+        }
+      }
+    }
+  } catch (_err) {
+    // Nominatim failed, try Photon next
+  }
+
+  // 2. Try Photon Reverse API
+  try {
+    const url = `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`;
+    const response = await fetch(url);
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.features && data.features.length > 0) {
+        const props = data.features[0].properties || {};
+        const street = props.street || props.name;
+        const houseNumber = props.housenumber || '';
+        const city = props.city || props.town || props.state || 'Oslo';
+        const postcode = props.postcode || '';
+
+        if (street) {
+          const streetPart = houseNumber ? `${street} ${houseNumber}` : street;
+          const cityPart = postcode ? `${postcode} ${city}` : city;
+          return `${streetPart}, ${cityPart}`;
+        }
+      }
+    }
+  } catch (_err) {
+    // Fallback
+  }
+
+  return `Posisjon (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+}
+
+/**
+ * Gets the user's real live GPS coordinates and reverse-geocodes to Norwegian address
+ */
+export async function getUserCurrentLocation(): Promise<GeocodeResult> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Geolokasjon støttes ikke av nettleseren din.'));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+
+        try {
+          const address = await reverseGeocode(lat, lng);
+          resolve({
+            address,
+            lat,
+            lng
+          });
+        } catch {
+          resolve({
+            address: `Posisjon (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+            lat,
+            lng
+          });
+        }
+      },
+      (err) => {
+        reject(err);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000
+      }
+    );
+  });
 }

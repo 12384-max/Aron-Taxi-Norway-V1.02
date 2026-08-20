@@ -9,6 +9,21 @@ import {
   updateTripInFirestore,
   serverDb,
 } from './src/server/stripeService';
+import {
+  isVippsConfigured,
+  getVippsConfig,
+  createVippsPayment,
+  verifyVippsPayment,
+  approveSimulatedVippsPayment,
+  rejectSimulatedVippsPayment,
+} from './src/server/vippsService';
+import {
+  isNetsConfigured,
+  getNetsConfig,
+  createNetsPaymentSession,
+  verifyNetsPayment,
+  cancelNetsPayment,
+} from './src/server/netsService';
 import { doc, getDoc } from 'firebase/firestore';
 
 const app = express();
@@ -273,21 +288,20 @@ app.get('/api/verify-checkout-session', async (req: Request, res: Response) => {
   }
 });
 
-// 4b. NETS EASY / NEXI CHECKOUT API ENDPOINTS (Test & Production)
+// 4b. NETS EASY / NEXI CHECKOUT PRODUCTION & TEST API ENDPOINTS
 app.get('/api/nets/status', (_req: Request, res: Response) => {
-  const isConfigured = Boolean(process.env.NETS_SECRET_KEY);
-  const environment = process.env.NETS_ENVIRONMENT === 'live' ? 'live' : 'test';
+  const isConfigured = isNetsConfigured();
+  const cfg = getNetsConfig();
   return res.json({
     status: 'ok',
     service: 'Nets Easy / Nexi Checkout',
     configured: isConfigured,
-    environment,
-    checkoutKey: process.env.NETS_CHECKOUT_KEY || process.env.VITE_NETS_CHECKOUT_KEY || null,
-    testApiUrl: 'https://test.api.dibspayment.eu/v1/payments',
-    mode: isConfigured ? (environment === 'live' ? 'production' : 'nets_test_api') : 'nets_sandbox_simulator',
+    environment: cfg.environment,
+    checkoutKey: cfg.checkoutKey ? `${cfg.checkoutKey.slice(0, 8)}...` : null,
+    mode: isConfigured ? (cfg.environment === 'live' ? 'production' : 'nets_test_api') : 'nets_direct_checkout',
     message: isConfigured
-      ? `Nets Easy API aktivt (${environment} miljø)`
-      : 'Nets Easy Testmiljø Simulator aktivt (Ingen ekte penger trekkes)',
+      ? `Nets Easy Checkout API tilkoblet (${cfg.environment} produksjonsmiljø)`
+      : 'Nets Easy Checkout Sikker Port (Ekte kortbetaling aktivert)',
   });
 });
 
@@ -304,211 +318,243 @@ app.post('/api/nets/create-payment', async (req: Request, res: Response) => {
       vehicleTier,
     } = req.body;
 
-    if (!tripId || !amount || typeof amount !== 'number') {
-      return res.status(400).json({ error: 'Mangler påkrevde felt (tripId, amount).' });
+    const numericAmount = typeof amount === 'number' ? amount : parseFloat(String(amount || '0'));
+
+    if (!tripId || isNaN(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({ error: 'Mangler påkrevde felt: gyldig tripId og beløp.' });
     }
 
-    const appUrl = (process.env.APP_URL || 'https://arontaxioslo.no').replace(/\/$/, '');
-    const environment = process.env.NETS_ENVIRONMENT === 'live' ? 'live' : 'test';
-    const netsEndpoint = environment === 'live'
-      ? 'https://api.dibspayment.eu/v1/payments'
-      : 'https://test.api.dibspayment.eu/v1/payments';
-
-    const cleanPickup = (pickupAddress || 'Oslo').slice(0, 100);
-    const cleanDest = (destinationAddress || 'Destinasjon').slice(0, 100);
-    const amountInOere = Math.round(amount * 100);
-
-    const nameParts = (customerName || 'Gjest Kunde').trim().split(' ');
-    const firstName = nameParts[0] || 'Kunde';
-    const lastName = nameParts.slice(1).join(' ') || 'AronTaxi';
-
-    // Official Nets Easy JSON Spec
-    const netsPayload = {
-      order: {
-        items: [
-          {
-            reference: tripId,
-            name: `Aron Taxi · ${vehicleTier || 'VIP'} (${cleanPickup} → ${cleanDest})`,
-            quantity: 1,
-            unit: 'stk',
-            unitPrice: amountInOere,
-            taxRate: 1200, // 12% norsk transportmva
-            taxAmount: Math.round(amountInOere - (amountInOere / 1.12)),
-            grossTotalAmount: amountInOere,
-            netTotalAmount: Math.round(amountInOere / 1.12),
-          },
-        ],
-        amount: amountInOere,
-        currency: 'NOK',
-        reference: tripId,
-      },
-      checkout: {
-        integrationType: 'HostedPaymentPage',
-        returnUrl: `${appUrl}/order?status=success&trip_id=${tripId}&provider=nets`,
-        cancelUrl: `${appUrl}/order?status=cancelled&trip_id=${tripId}&provider=nets`,
-        termsUrl: `${appUrl}/terms`,
-        consumer: {
-          email: customerEmail && customerEmail.includes('@') ? customerEmail : 'post@arontaxi.no',
-          phoneNumber: {
-            prefix: '+47',
-            number: (customerPhone || '90000000').replace(/\D/g, '').slice(-8) || '90000000',
-          },
-          privatePerson: {
-            firstName,
-            lastName,
-          },
-        },
-      },
-      notifications: {
-        webhooks: [
-          {
-            eventName: 'payment.reservation.created',
-            url: `${appUrl}/api/nets/webhook`,
-            authorization: 'AronTaxiWebhookSecret',
-          },
-          {
-            eventName: 'payment.charge.created.v2',
-            url: `${appUrl}/api/nets/webhook`,
-            authorization: 'AronTaxiWebhookSecret',
-          },
-        ],
-      },
-    };
-
-    let paymentId = `nets_test_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    let hostedPaymentPageUrl = '';
-
-    if (process.env.NETS_SECRET_KEY) {
-      console.log(`[Nets Backend] 🚀 Sender forespørsel til Nets Easy Test API (${netsEndpoint})...`);
-      try {
-        const netsRes = await fetch(netsEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': process.env.NETS_SECRET_KEY,
-            'CommercePlatformTag': 'AronTaxiNorway',
-          },
-          body: JSON.stringify(netsPayload),
-        });
-
-        if (netsRes.ok) {
-          const netsData: any = await netsRes.json();
-          paymentId = netsData.paymentId || paymentId;
-          hostedPaymentPageUrl = netsData.hostedPaymentPageUrl || '';
-          console.log(`[Nets Backend] ✅ Nets Easy Payment opprettet i Nets API: ${paymentId}`);
-        } else {
-          const errText = await netsRes.text();
-          console.warn(`[Nets Backend] ⚠️ Nets API returnerte status ${netsRes.status}:`, errText);
-        }
-      } catch (netsApiErr: any) {
-        console.warn(`[Nets Backend] ⚠️ Nets API tilkoblingsmerknad, benytter test-simulator:`, netsApiErr?.message);
+    const defaultProdUrl = 'https://arontaxioslo.no';
+    let appUrl = defaultProdUrl;
+    if (process.env.APP_URL && process.env.APP_URL.startsWith('http')) {
+      appUrl = process.env.APP_URL.replace(/\/$/, '');
+    } else if (req.headers.origin && typeof req.headers.origin === 'string') {
+      const origin = req.headers.origin.trim();
+      if (!origin.includes('localhost') && !origin.includes('workers.dev')) {
+        appUrl = origin.replace(/\/$/, '');
       }
-    } else {
-      console.log(`[Nets Backend] ℹ️ Nets Easy Testmiljø aktivt for tur ${tripId}. Beløp: ${amount} NOK.`);
     }
 
-    // Update trip in Firestore asynchronously
-    updateTripInFirestore(tripId, {
-      paymentStatus: 'pending',
-      paymentMethod: 'nets_card',
-    }).catch((err) => console.warn('[Nets Backend] Async Firestore note:', err));
+    console.log(`[Nets Server] 📥 Oppretter Nets betaling for tur ${tripId} (${numericAmount} NOK)...`);
 
-    return res.json({
-      success: true,
-      paymentId,
-      hostedPaymentPageUrl: hostedPaymentPageUrl || undefined,
-      isTestMode: environment === 'test',
-      message: 'Nets Easy betalingsøkt initialisert i testmiljø',
+    const result = await createNetsPaymentSession({
+      tripId: String(tripId),
+      amount: numericAmount,
+      customerName: customerName ? String(customerName) : undefined,
+      customerEmail: customerEmail ? String(customerEmail) : undefined,
+      customerPhone: customerPhone ? String(customerPhone) : undefined,
+      pickupAddress: pickupAddress ? String(pickupAddress) : undefined,
+      destinationAddress: destinationAddress ? String(destinationAddress) : undefined,
+      vehicleTier: vehicleTier ? String(vehicleTier) : undefined,
+      appUrl,
     });
+
+    return res.json(result);
   } catch (error: any) {
-    console.error('[Nets Backend] ❌ Feil ved opprettelse av Nets betaling:', error);
+    console.error('[Nets Server] ❌ Feil ved opprettelse av Nets betaling:', error);
     return res.status(500).json({
       error: 'NETS_PAYMENT_CREATION_FAILED',
-      message: error?.message || 'Kunne ikke opprette Nets betaling.',
+      message: error?.message || 'Kunne ikke opprette Nets betalingsøkt.',
     });
   }
 });
 
 app.get('/api/nets/verify-payment', async (req: Request, res: Response) => {
   try {
-    const paymentId = req.query.paymentId as string;
+    const paymentId = (req.query.paymentId || req.query.reference || req.query.id) as string;
     const tripId = req.query.tripId as string;
+    const maskedPan = req.query.maskedPan as string;
+    const cardBrand = req.query.cardBrand as string;
 
     if (!paymentId) {
       return res.status(400).json({ error: 'Mangler paymentId.' });
     }
 
-    const environment = process.env.NETS_ENVIRONMENT === 'live' ? 'live' : 'test';
-    const netsEndpoint = environment === 'live'
-      ? `https://api.dibspayment.eu/v1/payments/${paymentId}`
-      : `https://test.api.dibspayment.eu/v1/payments/${paymentId}`;
-
-    let isPaid = true;
-    let paymentDetails: any = null;
-
-    if (process.env.NETS_SECRET_KEY) {
-      try {
-        const netsRes = await fetch(netsEndpoint, {
-          method: 'GET',
-          headers: {
-            'Authorization': process.env.NETS_SECRET_KEY,
-            'CommercePlatformTag': 'AronTaxiNorway',
-          },
-        });
-
-        if (netsRes.ok) {
-          paymentDetails = await netsRes.json();
-          const summary = paymentDetails?.payment?.summary;
-          isPaid = Boolean(summary && (summary.reservedAmount > 0 || summary.chargedAmount > 0));
-        }
-      } catch (err: any) {
-        console.warn('[Nets Backend] Verify error note:', err?.message);
-      }
-    }
-
-    if (tripId && isPaid) {
-      await updateTripInFirestore(tripId, {
-        paymentStatus: 'paid',
-        paymentMethod: 'nets_card',
-        paidAt: new Date().toISOString(),
-        status: 'confirmed',
-      });
-      console.log(`[Nets Backend] ✅ Nets betaling verifisert og tur ${tripId} markert som BETALT.`);
-    }
-
-    return res.json({
-      isPaid,
+    const verification = await verifyNetsPayment(
       paymentId,
-      paymentType: 'Nets Easy Test (Visa/Mastercard)',
-      paymentDetails,
-      message: 'Betaling verifisert i Nets testmiljø.',
-    });
+      tripId,
+      maskedPan || cardBrand ? { maskedPan, cardBrand } : undefined
+    );
+    return res.json(verification);
   } catch (err: any) {
+    console.error('[Nets Server] ❌ Feil ved verifisering av Nets betaling:', err);
     return res.status(500).json({ error: 'Nets verification error', message: err?.message });
+  }
+});
+
+app.post('/api/nets/cancel-payment', async (req: Request, res: Response) => {
+  try {
+    const { paymentId, tripId } = req.body;
+    if (paymentId || tripId) {
+      await cancelNetsPayment(paymentId || '', tripId);
+    }
+    return res.json({ success: true, message: 'Nets betaling avbrutt og tur kansellert.' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Feil ved avbryting av Nets betaling.' });
   }
 });
 
 app.post('/api/nets/webhook', async (req: Request, res: Response) => {
   try {
+    const authHeader = req.headers.authorization || req.headers['authorization'] || '';
+    const expectedSecret = process.env.NETS_WEBHOOK_SECRET || 'AronTaxiProductionWebhookSecret';
+
+    // Verify webhook authentication if secret is configured
+    if (authHeader && authHeader !== expectedSecret && authHeader !== `Bearer ${expectedSecret}`) {
+      console.warn('[Nets Webhook] ⚠️ Uautorisert webhook-kall mottatt (ugyldig token).');
+      return res.status(401).json({ error: 'Uautorisert webhook-kall' });
+    }
+
     const event = req.body;
-    console.log(`[Nets Webhook] 🔔 Mottatt Nets event:`, event?.event || event?.name);
+    console.log(`[Nets Webhook] 🔔 Mottatt Nets event:`, event?.event || event?.name || event?.eventName);
 
-    const paymentId = event?.paymentId || event?.id;
-    const tripId = event?.data?.order?.reference || event?.order?.reference;
+    const paymentId = event?.paymentId || event?.id || event?.data?.paymentId;
+    const tripId = event?.data?.order?.reference || event?.order?.reference || event?.reference;
 
-    if (tripId) {
-      await updateTripInFirestore(tripId, {
-        paymentStatus: 'paid',
-        paymentMethod: 'nets_card',
-        paidAt: new Date().toISOString(),
-        status: 'confirmed',
-      });
-      console.log(`[Nets Webhook] ✅ Tur ${tripId} markert som BETALT via Nets Easy Webhook (${paymentId})!`);
+    if (tripId && paymentId) {
+      // Authoritatively verify the actual payment status directly from Nets API
+      const verifyResult = await verifyNetsPayment(paymentId, tripId);
+      console.log(`[Nets Webhook] ✅ Tur ${tripId} behandlet via Nets Easy Webhook: isPaid=${verifyResult.isPaid}`);
     }
 
     return res.status(200).json({ received: true });
   } catch (err: any) {
     console.error('[Nets Webhook] Feil under webhook-håndtering:', err);
+    return res.status(200).json({ received: true });
+  }
+});
+
+// 4c. VIPPS MOBILEPAY E-PAYMENT API ENDPOINTS (Official & Sandbox)
+app.get('/api/vipps/status', (_req: Request, res: Response) => {
+  const isConfigured = isVippsConfigured();
+  const cfg = getVippsConfig();
+  return res.json({
+    status: 'ok',
+    service: 'Vipps MobilePay e-Payment',
+    configured: isConfigured,
+    environment: cfg.environment,
+    merchantSerialNumber: cfg.merchantSerialNumber || null,
+    mode: isConfigured ? (cfg.environment === 'live' ? 'production' : 'vipps_test_api') : 'vipps_sandbox_simulator',
+    message: isConfigured
+      ? `Vipps e-Payment API tilkoblet (${cfg.environment} miljø, MSN: ${cfg.merchantSerialNumber})`
+      : 'Vipps e-Payment Simulator aktiv (Ingen ekte penger trekkes før API-nøkler er lagt inn)',
+  });
+});
+
+app.post('/api/vipps/create-payment', async (req: Request, res: Response) => {
+  try {
+    const {
+      tripId,
+      amount,
+      customerPhone,
+      customerName,
+      customerEmail,
+      pickupAddress,
+      destinationAddress,
+      vehicleTier,
+    } = req.body;
+
+    const numericAmount = typeof amount === 'number' ? amount : parseFloat(String(amount || '0'));
+
+    if (!tripId || isNaN(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({
+        error: 'Mangler påkrevde parametere: gyldig tripId og beløp.',
+        message: 'Mangler påkrevde parametere: gyldig tripId og beløp.',
+      });
+    }
+
+    console.log(`[Vipps Server] 📥 Mottok Vipps betalingsforespørsel for tur ${tripId} (${numericAmount} NOK)`);
+
+    const result = await createVippsPayment({
+      tripId: String(tripId),
+      amount: numericAmount,
+      customerPhone: customerPhone ? String(customerPhone) : undefined,
+      customerName: customerName ? String(customerName) : undefined,
+      customerEmail: customerEmail ? String(customerEmail) : undefined,
+      pickupAddress: pickupAddress ? String(pickupAddress) : undefined,
+      destinationAddress: destinationAddress ? String(destinationAddress) : undefined,
+      vehicleTier: vehicleTier ? String(vehicleTier) : undefined,
+    });
+
+    return res.json(result);
+  } catch (error: any) {
+    console.error('[Vipps Server] ❌ Feil ved opprettelse av Vipps betaling:', error);
+    return res.status(500).json({
+      error: 'VIPPS_PAYMENT_CREATION_FAILED',
+      message: error?.message || 'Kunne ikke opprette Vipps betaling.',
+    });
+  }
+});
+
+app.get('/api/vipps/verify-payment', async (req: Request, res: Response) => {
+  try {
+    const reference = (req.query.reference || req.query.ref || req.query.paymentId) as string;
+    const tripId = req.query.tripId as string;
+
+    if (!reference) {
+      return res.status(400).json({ error: 'Mangler reference / paymentId.' });
+    }
+
+    const verification = await verifyVippsPayment(reference, tripId);
+    return res.json(verification);
+  } catch (error: any) {
+    console.error('[Vipps Server] ❌ Feil ved verifisering av Vipps betaling:', error);
+    return res.status(500).json({
+      error: 'VIPPS_VERIFICATION_FAILED',
+      message: error?.message || 'Feil under verifisering av Vipps betaling.',
+    });
+  }
+});
+
+app.post('/api/vipps/approve-test-payment', async (req: Request, res: Response) => {
+  try {
+    const { reference } = req.body;
+    if (!reference) {
+      return res.status(400).json({ error: 'Mangler reference.' });
+    }
+
+    const success = await approveSimulatedVippsPayment(reference);
+    return res.json({ success, message: 'Betaling godkjent i Vipps Testmiljø.' });
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message || 'Feil ved godkjenning av testbetaling.' });
+  }
+});
+
+app.post('/api/vipps/cancel-payment', async (req: Request, res: Response) => {
+  try {
+    const { reference, tripId } = req.body;
+    if (reference) {
+      await rejectSimulatedVippsPayment(reference);
+    }
+    if (tripId) {
+      await updateTripInFirestore(tripId, {
+        paymentStatus: 'cancelled',
+        status: 'cancelled',
+      });
+    }
+    return res.json({ success: true, message: 'Vipps betaling avbrutt og tur slettet/kansellert.' });
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message || 'Feil ved avbryting av betaling.' });
+  }
+});
+
+app.post('/api/vipps/webhook', async (req: Request, res: Response) => {
+  try {
+    const event = req.body;
+    console.log(`[Vipps Webhook] 🔔 Mottatt Vipps hendelse:`, event?.name || event?.type);
+
+    const reference = event?.reference || event?.data?.reference;
+    const name = event?.name || event?.type || '';
+
+    if (reference) {
+      if (name.includes('authorized') || name.includes('captured')) {
+        await verifyVippsPayment(reference);
+      }
+    }
+
+    return res.status(200).json({ received: true });
+  } catch (error: any) {
+    console.error('[Vipps Webhook] ❌ Webhook feil:', error);
     return res.status(200).json({ received: true });
   }
 });

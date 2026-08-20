@@ -135,7 +135,7 @@ export const DriverBookingsView: React.FC<DriverBookingsViewProps> = ({
       'pending_payment'
     ];
     if (terminalStatuses.includes(t.status)) return false;
-    if (t.paymentStatus === 'payment_failed' || t.paymentStatus === 'cancelled') return false;
+    if (t.paymentStatus === 'pending_payment' || t.paymentStatus === 'payment_failed' || t.paymentStatus === 'cancelled') return false;
 
     if (t.declinedBy === driverId) return false;
     if (t.rejectedDriverIds && t.rejectedDriverIds.includes(driverId)) return false;
@@ -176,7 +176,11 @@ export const DriverBookingsView: React.FC<DriverBookingsViewProps> = ({
       t.status !== 'completed' &&
       t.status !== 'COMPLETED' &&
       t.status !== 'cancelled' &&
-      t.status !== 'CANCELLED'
+      t.status !== 'CANCELLED' &&
+      t.status !== 'pending_payment' &&
+      t.paymentStatus !== 'pending_payment' &&
+      t.paymentStatus !== 'payment_failed' &&
+      t.paymentStatus !== 'cancelled'
   );
 
   const handleConfirmCancel = async () => {
@@ -718,8 +722,8 @@ export const DriverBookingsView: React.FC<DriverBookingsViewProps> = ({
                 className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2.5 text-white font-medium focus:border-[#E5B83B] focus:outline-none"
               >
                 <option value="card">Bankterminal / Kort i bil</option>
-                <option value="vipps">Vipps i bil</option>
-                <option value="cash">Kontant</option>
+                <option value="vipps">Vipps (97 32 33 39 - Aron Taxi)</option>
+                <option value="cash">Kontant i bil</option>
               </select>
             </div>
           </div>

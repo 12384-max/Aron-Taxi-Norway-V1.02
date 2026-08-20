@@ -939,9 +939,10 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     saveTrips(updated);
 
     if (paymentStatus === 'paid') {
+      const isVipps = paymentMethod === 'vipps';
       // 1. Notify Drivers (chime + push on mobile/PC)
       notificationService.notify({
-        title: '⚡ Ny turforespørsel (Betalt med Nets)',
+        title: isVipps ? '⚡ Ny turforespørsel (Betalt med Vipps)' : '⚡ Ny turforespørsel (Betalt med Nets)',
         message: `${targetTrip?.pickup?.address || 'Oslo'} → ${targetTrip?.destination?.address || 'Destinasjon'} (${targetTrip?.estimatedPrice || ''} kr)`,
         type: 'trip_created',
         targetRole: 'driver',
@@ -952,8 +953,8 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       // 2. Notify Admin
       notificationService.notify({
-        title: '💳 Betaling godkjent i Nets testmiljø',
-        message: `Tur ${tripId} er betalt (${targetTrip?.estimatedPrice} kr).`,
+        title: isVipps ? '🟠 Betaling godkjent med Vipps' : '💳 Betaling godkjent i Nets testmiljø',
+        message: `Tur ${tripId} er betalt med ${isVipps ? 'Vipps (97 32 33 39)' : 'Nets Easy'} (${targetTrip?.estimatedPrice} kr).`,
         type: 'trip_created',
         targetRole: 'admin',
         tripId: tripId,

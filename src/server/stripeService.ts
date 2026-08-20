@@ -46,10 +46,13 @@ export interface TripPaymentUpdate {
   paidAt?: string;
   status?: string;
   paymentMethod?: 'stripe' | 'card' | 'vipps' | 'apple_pay' | 'cash' | 'invoice' | 'nets_card' | string;
+  maskedCardNumber?: string;
+  paymentBrand?: string;
+  [key: string]: any;
 }
 
 /**
- * Updates trip in Firestore upon Stripe webhook or verification
+ * Updates trip and order in Firestore upon payment verification or webhook
  * Uses setDoc with merge: true directly to avoid consuming unnecessary read quota.
  */
 export async function updateTripInFirestore(tripId: string, updates: TripPaymentUpdate) {
@@ -57,20 +60,22 @@ export async function updateTripInFirestore(tripId: string, updates: TripPayment
 
   try {
     const tripRef = doc(serverDb, 'trips', tripId);
+    const orderRef = doc(serverDb, 'orders', tripId);
     const now = new Date().toISOString();
 
-    await setDoc(
-      tripRef,
-      {
-        id: tripId,
-        tripId,
-        ...updates,
-        updatedAt: now,
-      },
-      { merge: true }
-    );
-    console.log(`[Stripe Backend] ✅ Firestore trip ${tripId} oppdatert med status: ${updates.paymentStatus}`);
+    const payload = {
+      id: tripId,
+      tripId,
+      ...updates,
+      updatedAt: now,
+    };
+
+    await Promise.allSettled([
+      setDoc(tripRef, payload, { merge: true }),
+      setDoc(orderRef, payload, { merge: true }),
+    ]);
+    console.log(`[Backend] ✅ Firestore trip/order ${tripId} oppdatert med paymentStatus: ${updates.paymentStatus}`);
   } catch (error: any) {
-    console.warn(`[Stripe Backend] Merknad ved lagring av tur ${tripId} i Firestore:`, error?.message || error);
+    console.warn(`[Backend] Merknad ved lagring av tur ${tripId} i Firestore:`, error?.message || error);
   }
 }

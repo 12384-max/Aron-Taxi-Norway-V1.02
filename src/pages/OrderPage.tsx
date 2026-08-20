@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
 import { LeafletMap } from '../components/LeafletMap';
-import { searchAddresses, getRouteAndDistance, calculateTripPrice, GeocodeResult, RouteResult } from '../services/osrm';
+import { searchAddresses, getRouteAndDistance, calculateTripPrice, getUserCurrentLocation, POPULAR_PRESETS, GeocodeResult, RouteResult } from '../services/osrm';
 import { useTrips } from '../context/TripContext';
 import { useAuth } from '../context/AuthContext';
 import { Trip, LocationPoint } from '../types';
@@ -17,7 +17,12 @@ import {
   checkStripeStatus,
   StripeConfigStatus
 } from '../services/stripeClient';
-import { NetsTestCheckoutModal } from '../components/payment/NetsTestCheckoutModal';
+import {
+  createNetsPaymentSession,
+  verifyNetsPayment,
+  cancelNetsPayment,
+} from '../services/netsClient';
+import { VippsCheckoutModal } from '../components/payment/VippsCheckoutModal';
 import {
   MapPin,
   Navigation,
@@ -58,7 +63,8 @@ import {
   ExternalLink,
   Receipt,
   Award,
-  MessageSquare
+  MessageSquare,
+  LocateFixed
 } from 'lucide-react';
 
 export type VehicleTier = 'vip_black' | 'comfort_eco' | 'airport_vip';
@@ -116,7 +122,7 @@ const VEHICLE_TIERS: TierOption[] = [
 export const OrderPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { createTrip, pricing, addTipAndRatingToTrip, trips, drivers, vehicles, updateTripPaymentStatus } = useTrips();
+  const { createTrip, pricing, addTipAndRatingToTrip, trips, drivers, vehicles, updateTripPaymentStatus, deleteTrip } = useTrips();
   const { user, loginAsGuest } = useAuth();
 
   const stateLocation = location.state || {};
@@ -126,22 +132,23 @@ export const OrderPage: React.FC = () => {
   const [customerPhone, setCustomerPhone] = useState(user?.phone || '');
   const [customerEmail, setCustomerEmail] = useState(user?.email || '');
 
-  const [fromQuery, setFromQuery] = useState(stateLocation.from || 'Karl Johans gate 1, Oslo');
-  const [toQuery, setToQuery] = useState(stateLocation.to || 'Oslo Lufthavn Gardermoen');
+  const [fromQuery, setFromQuery] = useState(stateLocation.from || '');
+  const [toQuery, setToQuery] = useState(stateLocation.to || '');
+  const [detectingLocation, setDetectingLocation] = useState<boolean>(!stateLocation.from);
   
   const [fromSuggestions, setFromSuggestions] = useState<GeocodeResult[]>([]);
   const [toSuggestions, setToSuggestions] = useState<GeocodeResult[]>([]);
 
   const [fromPoint, setFromPoint] = useState<LocationPoint>({
-    address: stateLocation.from || 'Karl Johans gate 1, Oslo',
-    lat: stateLocation.fromLat || 59.9127,
-    lng: stateLocation.fromLng || 10.7461
+    address: stateLocation.from || '',
+    lat: stateLocation.fromLat || 0,
+    lng: stateLocation.fromLng || 0
   });
 
   const [toPoint, setToPoint] = useState<LocationPoint>({
-    address: stateLocation.to || 'Oslo Lufthavn Gardermoen',
-    lat: stateLocation.toLat || 60.1976,
-    lng: stateLocation.toLng || 11.1004
+    address: stateLocation.to || '',
+    lat: stateLocation.toLat || 0,
+    lng: stateLocation.toLng || 0
   });
 
   const [viaStops, setViaStops] = useState<string>('');
@@ -152,9 +159,9 @@ export const OrderPage: React.FC = () => {
   const [notes, setNotes] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<'vipps' | 'card' | 'apple_pay' | 'cash' | 'invoice' | 'stripe'>('card');
 
-  // Nets Test Checkout Modal State
-  const [showNetsModal, setShowNetsModal] = useState<boolean>(false);
-  const [pendingNetsTrip, setPendingNetsTrip] = useState<Trip | null>(null);
+  // Vipps Direct Modal State (+47 97323339 / Aron Taxi)
+  const [showVippsModal, setShowVippsModal] = useState<boolean>(false);
+  const [pendingVippsTrip, setPendingVippsTrip] = useState<Trip | null>(null);
 
   // Stripe Payment & Verification State
   const [verifyingPayment, setVerifyingPayment] = useState<boolean>(false);
@@ -198,6 +205,57 @@ export const OrderPage: React.FC = () => {
   const [bookedTrip, setBookedTrip] = useState<Trip | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
 
+  // Auto-detect user's live GPS position if from-address is not passed
+  useEffect(() => {
+    if (!stateLocation.from) {
+      setDetectingLocation(true);
+      getUserCurrentLocation()
+        .then((loc) => {
+          setFromPoint({
+            address: loc.address,
+            lat: loc.lat,
+            lng: loc.lng
+          });
+          setFromQuery(loc.address);
+          toast.success(`📍 Posisjon funnet: ${loc.address.split(',')[0]}`, {
+            description: 'Hentested er automatisk satt til din nåværende posisjon.'
+          });
+        })
+        .catch((err) => {
+          console.warn('Geolocation lookup notice:', err?.message);
+          // Graceful fallback to Oslo sentrum if permission denied or unavailable
+          setFromPoint({
+            address: 'Oslo sentrum',
+            lat: 59.9139,
+            lng: 10.7522
+          });
+          setFromQuery('Oslo sentrum');
+        })
+        .finally(() => {
+          setDetectingLocation(false);
+        });
+    }
+  }, [stateLocation.from]);
+
+  const handleUseCurrentLocation = async () => {
+    setDetectingLocation(true);
+    try {
+      const loc = await getUserCurrentLocation();
+      setFromPoint({
+        address: loc.address,
+        lat: loc.lat,
+        lng: loc.lng
+      });
+      setFromQuery(loc.address);
+      setFromSuggestions([]);
+      toast.success(`📍 Posisjon oppdatert: ${loc.address.split(',')[0]}`);
+    } catch (err: any) {
+      toast.error('Kunne ikke hente posisjon. Sjekk at posisjonstilgang er tillatt i nettleseren.');
+    } finally {
+      setDetectingLocation(false);
+    }
+  };
+
   // Calculate live available drivers in Oslo (Online AND not currently on an active trip)
   const busyDriverIds = new Set(
     trips
@@ -230,13 +288,16 @@ export const OrderPage: React.FC = () => {
     checkStripeStatus().then(setStripeStatus).catch(() => {});
   }, []);
 
-  // Handle Return from Stripe Checkout (success_url / cancel_url)
+  // Handle Return from Stripe Checkout & Nets Easy Checkout (success / cancelled)
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const sessionId = params.get('session_id');
     const paymentStatusParam = params.get('payment_status');
-    const tripIdParam = params.get('trip_id');
+    const tripIdParam = params.get('trip_id') || params.get('tripId');
+    const statusParam = params.get('status');
+    const netsPaymentId = params.get('paymentId') || params.get('payment_id');
 
+    // 1. STRIPE CHECKOUT RETURN
     if (paymentStatusParam === 'success' && sessionId) {
       setVerifyingPayment(true);
       verifyStripeSession(sessionId, tripIdParam || undefined).then(async (res) => {
@@ -285,6 +346,70 @@ export const OrderPage: React.FC = () => {
       });
       toast.error('Stripe-betalingen ble avbrutt.');
     }
+
+    // 2. NETS EASY CHECKOUT RETURN
+    if (statusParam === 'nets_success' && tripIdParam) {
+      setVerifyingPayment(true);
+      const verifyNetsOrder = async () => {
+        try {
+          let paymentIdToVerify = netsPaymentId;
+          if (!paymentIdToVerify) {
+            const snap = await getDoc(doc(db, 'trips', tripIdParam));
+            if (snap.exists()) {
+              paymentIdToVerify = snap.data()?.paymentId;
+            }
+          }
+
+          if (paymentIdToVerify) {
+            const res = await verifyNetsPayment(paymentIdToVerify, tripIdParam);
+            setVerifyingPayment(false);
+            if (res.isPaid) {
+              setPaymentBanner({
+                type: 'success',
+                title: 'Nets Easy Betaling Bekreftet!',
+                message: `Takk for din bestilling. Beløpet på ${res.amount || 'avtalt fastpris'} NOK er autorisert og godkjent via Nets Easy Checkout. Nærmeste ledige sjåfør sendes nå.`,
+                sessionId: paymentIdToVerify,
+                amount: res.amount
+              });
+              toast.success('🎉 Betaling godkjent via Nets Easy Checkout!');
+
+              const snap = await getDoc(doc(db, 'trips', tripIdParam));
+              if (snap.exists()) {
+                setBookedTrip(snap.data() as Trip);
+              }
+            } else {
+              setPaymentBanner({
+                type: 'error',
+                title: 'Nets Betaling Ikke Fullført',
+                message: res.message || 'Betalingen ble ikke autorisert hos Nets. Turen er ikke sendt til sjåfør.',
+                sessionId: paymentIdToVerify
+              });
+              toast.error('Nets-betalingen ble ikke godkjent.');
+            }
+          } else {
+            setVerifyingPayment(false);
+            setPaymentBanner({
+              type: 'error',
+              title: 'Mangler Betalingsreferanse',
+              message: 'Kunne ikke hente Nets betalings-ID for denne turen.',
+            });
+          }
+        } catch (err: any) {
+          setVerifyingPayment(false);
+          console.error('[Nets Verify Error]', err);
+        }
+      };
+
+      verifyNetsOrder();
+    } else if (statusParam === 'nets_cancelled' && tripIdParam) {
+      cancelNetsPayment('', tripIdParam).catch(() => {});
+      setPaymentBanner({
+        type: 'cancelled',
+        title: 'Nets Betaling Ble Avbrutt',
+        message: 'Betalingsøkten hos Nets Easy ble avbrutt. Ingen penger er trukket fra kortet ditt. Turen er kansellert.'
+      });
+      toast.error('Nets-betalingen ble avbrutt.');
+    }
   }, [location.search]);
 
   // Live Firestore trip sync when booked
@@ -307,32 +432,43 @@ export const OrderPage: React.FC = () => {
 
   // Recalculate OSRM route whenever fromPoint or toPoint changes
   useEffect(() => {
+    if (!fromPoint?.lat || !fromPoint?.lng || !toPoint?.lat || !toPoint?.lng || !toQuery.trim()) {
+      setRouteData(null);
+      setPriceDetails(null);
+      return;
+    }
+
     let active = true;
     const computeRoute = async () => {
       setCalculating(true);
-      const res = await getRouteAndDistance(fromPoint.lat, fromPoint.lng, toPoint.lat, toPoint.lng);
-      if (!active) return;
-      
-      setRouteData(res);
-      const isAirport =
-        toQuery.toLowerCase().includes('gardermoen') ||
-        fromQuery.toLowerCase().includes('gardermoen') ||
-        toQuery.toLowerCase().includes('torp') ||
-        fromQuery.toLowerCase().includes('torp') ||
-        toQuery.toLowerCase().includes('flyplass') ||
-        fromQuery.toLowerCase().includes('flyplass') ||
-        toPoint.address.toLowerCase().includes('gardermoen') ||
-        fromPoint.address.toLowerCase().includes('gardermoen') ||
-        selectedTier === 'airport_vip';
+      try {
+        const res = await getRouteAndDistance(fromPoint.lat, fromPoint.lng, toPoint.lat, toPoint.lng);
+        if (!active) return;
+        
+        setRouteData(res);
+        const isAirport =
+          toQuery.toLowerCase().includes('gardermoen') ||
+          fromQuery.toLowerCase().includes('gardermoen') ||
+          toQuery.toLowerCase().includes('torp') ||
+          fromQuery.toLowerCase().includes('torp') ||
+          toQuery.toLowerCase().includes('flyplass') ||
+          fromQuery.toLowerCase().includes('flyplass') ||
+          toPoint.address.toLowerCase().includes('gardermoen') ||
+          fromPoint.address.toLowerCase().includes('gardermoen') ||
+          selectedTier === 'airport_vip';
 
-      const pricingCalc = calculateTripPrice(res.distanceKm, res.durationMinutes, isAirport, pricing);
-      setPriceDetails(pricingCalc);
-      setCalculating(false);
+        const pricingCalc = calculateTripPrice(res.distanceKm, res.durationMinutes, isAirport, pricing);
+        setPriceDetails(pricingCalc);
+      } catch (err) {
+        console.error('Route calculation error:', err);
+      } finally {
+        if (active) setCalculating(false);
+      }
     };
 
     computeRoute();
     return () => { active = false; };
-  }, [fromPoint, toPoint, pricing, toQuery, fromQuery, selectedTier]);
+  }, [fromPoint.lat, fromPoint.lng, fromPoint.address, toPoint.lat, toPoint.lng, toPoint.address, pricing, toQuery, fromQuery, selectedTier]);
 
   // Auto apply coupon if provided via navigation state
   useEffect(() => {
@@ -446,8 +582,8 @@ export const OrderPage: React.FC = () => {
       loginAsGuest(customerName || 'Gjestekunde', customerPhone, customerEmail);
     }
 
-    const isStripeMethod = paymentMethod === 'card' || (paymentMethod as string) === 'stripe';
-    const initialPaymentStatus = isStripeMethod ? 'pending_payment' : 'pending';
+    const isPaymentRequiredBeforeOrder = paymentMethod === 'card' || (paymentMethod as string) === 'stripe' || paymentMethod === 'vipps';
+    const initialPaymentStatus = isPaymentRequiredBeforeOrder ? 'pending_payment' : 'pending';
 
     const created = await createTrip({
       customerName: customerName || 'Gjestekunde',
@@ -482,14 +618,56 @@ export const OrderPage: React.FC = () => {
       airportFee: priceDetails.airportFee,
       commissionAron: priceDetails.commissionAron,
       driverPayout: priceDetails.driverPayout,
-      paymentMethod: isStripeMethod ? 'card' : paymentMethod,
+      paymentMethod: (paymentMethod as string) === 'stripe' ? 'card' : paymentMethod,
       paymentStatus: initialPaymentStatus
     }, stateLocation.existingTripId);
 
     if (paymentMethod === 'card' || paymentMethod === 'stripe') {
-      // Trigger Nets Easy Test Checkout Modal
-      setPendingNetsTrip(created);
-      setShowNetsModal(true);
+      try {
+        toast.info('Oppretter sikker Nets Easy kortbetaling...', {
+          description: 'Videresender deg til Nets sikre betalingsportal.'
+        });
+
+        const netsRes = await createNetsPaymentSession({
+          tripId: created.id,
+          amount: finalPayablePrice,
+          customerName: customerName || 'Gjestekunde',
+          customerEmail: customerEmail || 'gjest@arontaxi.no',
+          customerPhone: customerPhone || '+47 900 00 000',
+          pickupAddress: fromPoint.address,
+          destinationAddress: toPoint.address,
+          vehicleTier: selectedTier || 'VIP',
+        });
+
+        if (netsRes.success && netsRes.hostedPaymentPageUrl) {
+          toast.success('Videresender til Nets Easy Checkout...');
+          window.location.href = netsRes.hostedPaymentPageUrl;
+          return;
+        } else {
+          setSubmitting(false);
+          await deleteTrip(created.id).catch(() => {});
+
+          toast.error('Nets Betaling Feilet', {
+            description: netsRes.message || 'Nets Easy API-nøkkel mangler eller avviste opprettelsen. Turen ble ikke bestilt.'
+          });
+
+          setPaymentBanner({
+            type: 'error',
+            title: 'Nets Kortbetaling Ikke Gjennomført',
+            message: netsRes.message || 'Kunne ikke åpne Nets Hosted Checkout. Ingen penger er trukket.',
+          });
+          return;
+        }
+      } catch (netsErr: any) {
+        setSubmitting(false);
+        await deleteTrip(created.id).catch(() => {});
+        toast.error(`Nets feil: ${netsErr?.message || 'Nettverksfeil'}`);
+        return;
+      }
+    } else if (paymentMethod === 'vipps') {
+      // Trigger Vipps Checkout Modal
+      setPendingVippsTrip(created);
+      setShowVippsModal(true);
       setSubmitting(false);
       return;
     } else {
@@ -981,7 +1159,27 @@ export const OrderPage: React.FC = () => {
 
                   {/* FROM */}
                   <div className="relative">
-                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Fra (Hentested) *</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase">Fra (Hentested) *</label>
+                      <button
+                        type="button"
+                        onClick={handleUseCurrentLocation}
+                        disabled={detectingLocation}
+                        className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#D4AF37] hover:text-[#F5F2ED] transition-colors cursor-pointer disabled:opacity-50"
+                      >
+                        {detectingLocation ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin text-[#D4AF37]" />
+                            <span>Finner din posisjon...</span>
+                          </>
+                        ) : (
+                          <>
+                            <LocateFixed className="w-3 h-3 text-[#D4AF37]" />
+                            <span>Bruk min posisjon</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                     <div className="relative flex items-center">
                       <MapPin className="w-4 h-4 text-[#D4AF37] absolute left-3 pointer-events-none" />
                       <input
@@ -989,9 +1187,21 @@ export const OrderPage: React.FC = () => {
                         required
                         value={fromQuery}
                         onChange={(e) => handleFromSearch(e.target.value)}
-                        placeholder="Hvor skal du hentes?"
-                        className="w-full pl-9 pr-4 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
+                        placeholder={detectingLocation ? "Finner din posisjon via GPS..." : "Hvor skal du hentes?"}
+                        className="w-full pl-9 pr-10 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
                       />
+                      <button
+                        type="button"
+                        onClick={handleUseCurrentLocation}
+                        title="Bruk min nåværende posisjon"
+                        className="absolute right-2.5 p-1 rounded-lg bg-white/5 hover:bg-[#D4AF37]/20 text-slate-400 hover:text-[#D4AF37] transition-colors cursor-pointer"
+                      >
+                        {detectingLocation ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#D4AF37]" />
+                        ) : (
+                          <LocateFixed className="w-3.5 h-3.5 text-[#D4AF37]" />
+                        )}
+                      </button>
                     </div>
                     {fromSuggestions.length > 0 && (
                       <div className="absolute top-full left-0 right-0 mt-1 bg-[#131926] border border-white/10 rounded-xl shadow-2xl z-30 max-h-48 overflow-y-auto">
@@ -1011,7 +1221,10 @@ export const OrderPage: React.FC = () => {
 
                   {/* TO */}
                   <div className="relative">
-                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">Til (Destinasjon) *</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase">Til (Destinasjon) *</label>
+                      <span className="text-[10px] text-slate-500">Raskeste rute & fastpris</span>
+                    </div>
                     <div className="relative flex items-center">
                       <Navigation className="w-4 h-4 text-emerald-400 absolute left-3 pointer-events-none rotate-45" />
                       <input
@@ -1019,10 +1232,38 @@ export const OrderPage: React.FC = () => {
                         required
                         value={toQuery}
                         onChange={(e) => handleToSearch(e.target.value)}
-                        placeholder="Hvor skal du reise?"
+                        placeholder="Hvor skal du reise? (F.eks. Gardermoen, Oslo S, Fornebu)"
                         className="w-full pl-9 pr-4 py-2.5 bg-[#090D16] border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#D4AF37]"
                       />
                     </div>
+
+                    {/* QUICK PRESET DESTINATIONS */}
+                    <div className="flex items-center gap-1.5 mt-2 overflow-x-auto pb-1 scrollbar-none">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase shrink-0">Hurtigvalg:</span>
+                      {POPULAR_PRESETS.map((preset, pIdx) => (
+                        <button
+                          key={pIdx}
+                          type="button"
+                          onClick={() => {
+                            setToQuery(preset.address);
+                            setToPoint({
+                              address: preset.address,
+                              lat: preset.lat,
+                              lng: preset.lng
+                            });
+                            setToSuggestions([]);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all border shrink-0 cursor-pointer ${
+                            toQuery === preset.address
+                              ? 'bg-[#D4AF37] text-slate-950 border-[#D4AF37] font-black'
+                              : 'bg-white/5 hover:bg-white/10 text-slate-300 border-white/10 hover:border-white/20'
+                          }`}
+                        >
+                          {preset.address.split(',')[0]}
+                        </button>
+                      ))}
+                    </div>
+
                     {toSuggestions.length > 0 && (
                       <div className="absolute top-full left-0 right-0 mt-1 bg-[#131926] border border-white/10 rounded-xl shadow-2xl z-30 max-h-48 overflow-y-auto">
                         {toSuggestions.map((item, idx) => (
@@ -1380,10 +1621,10 @@ export const OrderPage: React.FC = () => {
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                     {[
-                      { id: 'card', name: 'Kort / Nets Easy', sub: 'Visa · Mastercard · Nets' },
-                      { id: 'vipps', name: 'Vipps', sub: 'Mobilbetaling' },
+                      { id: 'card', name: 'Kort / Nets Easy', sub: 'Visa · Mastercard · BankID' },
+                      { id: 'vipps', name: 'Vipps e-Payment', sub: 'Offisiell · BankID' },
                       { id: 'apple_pay', name: 'Apple Pay', sub: 'Touch / Face ID' },
-                      { id: 'cash', name: 'Kontant', sub: 'Betal i bil' }
+                      { id: 'cash', name: 'Betal i bil', sub: 'Kort / Kontant til sjåfør' }
                     ].map((pm) => (
                       <button
                         key={pm.id}
@@ -1402,6 +1643,23 @@ export const OrderPage: React.FC = () => {
                       </button>
                     ))}
                   </div>
+
+                  {/* VIPPS SECURE BADGE */}
+                  {paymentMethod === 'vipps' && (
+                    <div className="p-3 bg-gradient-to-r from-[#FF5B24]/15 via-[#0F1420] to-[#FF5B24]/15 border border-[#FF5B24]/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-6 h-6 rounded-full bg-[#FF5B24] text-white flex items-center justify-center font-black text-xs shrink-0">
+                          V
+                        </span>
+                        <span className="text-slate-300">
+                          Forhåndsbetaling via <strong>Vipps MobilePay e-Payment</strong>. Turen låses og sendes kun etter godkjent betaling.
+                        </span>
+                      </div>
+                      <span className="px-2.5 py-0.5 bg-[#FF5B24]/20 border border-[#FF5B24]/40 text-[#FF5B24] text-[10px] font-mono font-black rounded-full uppercase shrink-0">
+                        Vipps e-Payment
+                      </span>
+                    </div>
+                  )}
 
                   {/* NETS / STRIPE SECURE BADGE */}
                   {(paymentMethod === 'card' || (paymentMethod as string) === 'stripe') && (
@@ -1660,37 +1918,46 @@ export const OrderPage: React.FC = () => {
           </div>
         )}
 
-        {/* NETS EASY TEST CHECKOUT MODAL */}
-        <NetsTestCheckoutModal
-          isOpen={showNetsModal}
+        {/* VIPPS CHECKOUT MODAL (+47 97323339 / Aron Taxi) */}
+        <VippsCheckoutModal
+          isOpen={showVippsModal}
           onClose={() => {
-            setShowNetsModal(false);
+            setShowVippsModal(false);
             setSubmitting(false);
           }}
-          amount={pendingNetsTrip ? (pendingNetsTrip.estimatedPrice || finalPayablePrice) : finalPayablePrice}
-          tripId={pendingNetsTrip?.id || 'TUR-TEST'}
-          pickupAddress={fromPoint.address || 'Oslo sentrum'}
-          destinationAddress={toPoint.address || 'Oslo Lufthavn Gardermoen'}
+          onCancelPayment={async () => {
+            if (pendingVippsTrip) {
+              await deleteTrip(pendingVippsTrip.id);
+              setPendingVippsTrip(null);
+              toast.info('Vipps-betalingen ble avbrutt – ingen tur ble bestilt.');
+            }
+            setShowVippsModal(false);
+            setSubmitting(false);
+          }}
+          amount={pendingVippsTrip ? (pendingVippsTrip.estimatedPrice || finalPayablePrice) : finalPayablePrice}
+          tripId={pendingVippsTrip?.id || 'TUR-VIPPS'}
+          pickupAddress={fromPoint.address || 'Oslo'}
+          destinationAddress={toPoint.address || 'Gardermoen'}
           customerName={customerName || 'Gjestekunde'}
-          customerEmail={customerEmail || 'gjest@arontaxi.no'}
           customerPhone={customerPhone || '+47 900 00 000'}
-          onPaymentSuccess={async (paymentDetails) => {
-            if (pendingNetsTrip) {
-              await updateTripPaymentStatus(pendingNetsTrip.id, 'paid', 'nets_card', {
-                paymentId: paymentDetails.paymentId,
-                maskedCardNumber: paymentDetails.maskedCard,
-                paymentBrand: paymentDetails.paymentMethod
+          onPaymentSuccess={async (details) => {
+            if (pendingVippsTrip) {
+              await updateTripPaymentStatus(pendingVippsTrip.id, 'paid', 'vipps', {
+                paymentId: details.paymentId,
+                vippsNumber: details.vippsNumber,
+                vippsRecipient: details.vippsRecipient,
+                customerPhone: details.payerPhone || customerPhone
               });
               const updatedTrip: Trip = {
-                ...pendingNetsTrip,
+                ...pendingVippsTrip,
                 paymentStatus: 'paid',
-                paymentMethod: 'nets_card',
+                paymentMethod: 'vipps',
                 status: 'requested',
                 paidAt: new Date().toISOString()
               };
               setBookedTrip(updatedTrip);
-              setShowNetsModal(false);
-              toast.success('🎉 Betaling godkjent i Nets testmiljø! Turen er bekreftet og sendt til sjåfør.');
+              setShowVippsModal(false);
+              toast.success('🎉 Betaling godkjent med Vipps! Turen er bekreftet og sendt til sjåfør.');
             }
           }}
         />

@@ -571,6 +571,18 @@ export const CustomerAccountPage: React.FC = () => {
                         <span>MVA (12%)</span>
                         <span className="font-mono">{Math.round((rTrip.finalPrice || rTrip.estimatedPrice) - (rTrip.finalPrice || rTrip.estimatedPrice) / 1.12)} NOK</span>
                       </div>
+                      <div className="flex justify-between text-slate-400 text-[11px]">
+                        <span>Betalingsmåte</span>
+                        <span className="font-semibold text-slate-300">
+                          {rTrip.paymentMethod === 'vipps'
+                            ? 'Vipps (97 32 33 39 - Aron Taxi)'
+                            : rTrip.paymentMethod === 'nets_card' || rTrip.paymentMethod === 'card'
+                            ? 'Nets Easy Kortbetaling'
+                            : rTrip.paymentMethod === 'cash'
+                            ? 'Kontant i bil'
+                            : 'Direktebetaling'}
+                        </span>
+                      </div>
                       <div className="border-t border-white/10 pt-2 flex justify-between text-sm font-black text-white">
                         <span>Totalt betalt</span>
                         <span className="text-[#D4AF37] font-mono">{rTrip.finalPrice || rTrip.estimatedPrice} NOK</span>

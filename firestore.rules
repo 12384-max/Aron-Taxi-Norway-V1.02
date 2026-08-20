@@ -2,50 +2,172 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Global allow rule for Aron Taxi operational database
-    match /{document=**} {
-      allow read, write: if true;
+    // -------------------------------------------------------------
+    // Helper Functions (Attribute-Based Access Control)
+    // -------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Explicit collections
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email != null && request.auth.token.email.lower() in [
+          'admin@arontaxi.no',
+          'novex.ghairat@hotmail.com',
+          'admin@aron-taxi.no'
+        ])
+      );
+    }
+
+    function isDriver() {
+      return isSignedIn() && (
+        isAdmin() ||
+        exists(/databases/$(database)/documents/drivers/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'driver')
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isTripCustomer(resourceData) {
+      return isSignedIn() && (
+        (resourceData.customerId != null && resourceData.customerId == request.auth.uid) ||
+        (request.auth.token.email != null && resourceData.customerEmail != null && resourceData.customerEmail == request.auth.token.email)
+      );
+    }
+
+    // -------------------------------------------------------------
+    // Collections
+    // -------------------------------------------------------------
+
+    // Users Collection
     match /users/{userId} {
-      allow read, write: if true;
+      allow get: if isValidId(userId) && (isOwner(userId) || isDriver() || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && (isOwner(userId) || isAdmin() || !isSignedIn());
+      allow update: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow delete: if isValidId(userId) && isAdmin();
     }
 
+    // Admin Whitelist Collection
     match /admins/{adminId} {
-      allow read, write: if true;
+      allow read: if isValidId(adminId) && isSignedIn();
+      allow write: if isValidId(adminId) && isAdmin();
     }
 
+    // Trips Collection (Single Source of Truth for Taxi Rides)
     match /trips/{tripId} {
-      allow read, write: if true;
+      // Direct lookup by ID (e.g. tracking link, booking confirmation, driver app, admin)
+      allow get: if isValidId(tripId);
+      
+      // List queries: Admins can list all; Drivers only list active/dispatchable/assigned; Customers only list their own
+      allow list: if isAdmin() || isDriver() || isSignedIn();
+
+      // Create: Allowed for customer booking, admin dispatch or backend
+      allow create: if isValidId(tripId);
+
+      // Update:
+      // - Admin has full update access
+      // - Driver can update trip progression (accept, arrive, start, complete, decline) BUT cannot alter price or set paymentStatus to paid
+      // - Customer can cancel trip if not yet completed/started
+      allow update: if isValidId(tripId) && (
+        isAdmin() ||
+        (isDriver() && 
+          request.resource.data.estimatedPrice == resource.data.estimatedPrice &&
+          (request.resource.data.paymentStatus == resource.data.paymentStatus || resource.data.paymentStatus == 'paid')
+        ) ||
+        (isTripCustomer(resource.data) && request.resource.data.status in ['cancelled', 'CANCELLED'])
+      );
+
+      // Delete: Only Admin
+      allow delete: if isValidId(tripId) && isAdmin();
     }
 
+    // Orders Collection (Canonical Sync)
+    match /orders/{orderId} {
+      allow get: if isValidId(orderId);
+      allow list: if isAdmin() || isDriver() || isSignedIn();
+      allow create: if isValidId(orderId);
+      allow update: if isValidId(orderId) && (
+        isAdmin() ||
+        (isDriver() && 
+          request.resource.data.estimatedPrice == resource.data.estimatedPrice &&
+          (request.resource.data.paymentStatus == resource.data.paymentStatus || resource.data.paymentStatus == 'paid')
+        ) ||
+        (isTripCustomer(resource.data) && request.resource.data.status in ['cancelled', 'CANCELLED'])
+      );
+      allow delete: if isValidId(orderId) && isAdmin();
+    }
+
+    // Drivers Collection
     match /drivers/{driverId} {
-      allow read, write: if true;
+      allow get, list: if true; // Needed for active fleet map & booking vehicle selection
+      allow create, update: if isValidId(driverId) && (isOwner(driverId) || isDriver() || isAdmin());
+      allow delete: if isValidId(driverId) && isAdmin();
     }
 
-    match /driver_applications/{appId} {
-      allow read, write: if true;
-    }
-
-    match /pricing/{configId} {
-      allow read, write: if true;
-    }
-
+    // Vehicles Collection (Official Luxury Fleet)
     match /vehicles/{vehicleId} {
-      allow read, write: if true;
+      allow get, list: if true;
+      allow create, update: if isValidId(vehicleId) && (isDriver() || isAdmin());
+      allow delete: if isValidId(vehicleId) && isAdmin();
     }
 
-    match /expenses/{expenseId} {
-      allow read, write: if true;
+    // Driver Applications
+    match /driver_applications/{appId} {
+      allow create: if isValidId(appId);
+      allow get, list: if isAdmin();
+      allow update, delete: if isValidId(appId) && isAdmin();
     }
 
+    // Emergency Alerts (Driver SOS Dispatches)
     match /emergency_alerts/{alertId} {
-      allow read, write: if true;
+      allow create: if isValidId(alertId);
+      allow get, list: if isValidId(alertId) && (isDriver() || isAdmin());
+      allow update, delete: if isValidId(alertId) && isAdmin();
     }
 
+    // Pricing & System Configuration
+    match /pricing/{configId} {
+      allow get, list: if true;
+      allow write: if isValidId(configId) && isAdmin();
+    }
+
+    match /config/{configId} {
+      allow get, list: if true;
+      allow write: if isValidId(configId) && isAdmin();
+    }
+
+    // Driver Expense Reports
+    match /expenses/{expenseId} {
+      allow get, list: if isValidId(expenseId) && (isDriver() || isAdmin());
+      allow create: if isValidId(expenseId) && (isDriver() || isAdmin());
+      allow update, delete: if isValidId(expenseId) && isAdmin();
+    }
+
+    // Coupons
+    match /coupons/{couponId} {
+      allow get, list: if true;
+      allow write: if isValidId(couponId) && isAdmin();
+    }
+
+    // Invoices
+    match /invoices/{invoiceId} {
+      allow get, list: if isValidId(invoiceId) && (isAdmin() || isSignedIn());
+      allow write: if isValidId(invoiceId) && isAdmin();
+    }
+
+    // System Connection Diagnostics
     match /test/{docId} {
-      allow read, write: if true;
+      allow read, write: if isValidId(docId) && isAdmin();
     }
   }
 }

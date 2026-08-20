@@ -40,13 +40,28 @@
         "status": {
           "type": "string",
           "enum": [
+            "NEW",
+            "pending",
+            "pending_payment",
             "requested",
+            "confirmed",
             "searching_driver",
+            "ASSIGNED",
             "driver_assigned",
+            "DRIVER_ACCEPTED",
+            "accepted",
+            "DRIVER_DECLINED",
+            "rejected",
+            "DRIVER_ARRIVING",
             "driver_arriving",
+            "DRIVER_ARRIVED",
             "driver_arrived",
+            "IN_PROGRESS",
             "trip_started",
+            "active",
+            "COMPLETED",
             "completed",
+            "CANCELLED",
             "cancelled"
           ]
         },
@@ -58,10 +73,11 @@
         "startFee": { "type": "number" },
         "commissionAron": { "type": "number" },
         "driverPayout": { "type": "number" },
-        "paymentMethod": { "type": "string", "enum": ["vipps", "card", "apple_pay", "cash", "invoice", "stripe"] },
-        "paymentStatus": { "type": "string", "enum": ["pending", "completed", "pending_payment", "paid", "payment_failed", "cancelled"] },
+        "paymentMethod": { "type": "string", "enum": ["vipps", "card", "apple_pay", "cash", "invoice", "stripe", "nets_card"] },
+        "paymentStatus": { "type": "string", "enum": ["pending", "completed", "pending_payment", "paid", "payment_failed", "cancelled", "succeeded", "refunded"] },
         "stripeSessionId": { "type": "string", "maxLength": 256 },
         "paymentIntentId": { "type": "string", "maxLength": 256 },
+        "paymentId": { "type": "string", "maxLength": 256 },
         "paidAt": { "type": "string", "maxLength": 64 },
         "driverId": { "type": "string", "maxLength": 128 },
         "driverName": { "type": "string", "maxLength": 128 },
@@ -91,7 +107,22 @@
         "totalTrips": { "type": "number" },
         "todayEarnings": { "type": "number" }
       },
-      "required": ["id", "name", "email", "licenseNumber", "vehiclePlate", "isOnline"]
+      "required": ["id", "name", "email", "licenseNumber", "isOnline"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Official Aron Taxi luxury fleet vehicle",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 64 },
+        "model": { "type": "string", "maxLength": 128 },
+        "licensePlate": { "type": "string", "maxLength": 32 },
+        "permitNumber": { "type": "string", "maxLength": 64 },
+        "year": { "type": "number" },
+        "fuelType": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "service", "inactive"] }
+      },
+      "required": ["id", "model", "licensePlate", "permitNumber", "status"]
     },
     "PricingConfig": {
       "title": "PricingConfig",
@@ -120,6 +151,20 @@
         "date": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "driverId", "category", "amount", "date"]
+    },
+    "EmergencyAlert": {
+      "title": "EmergencyAlert",
+      "description": "Driver panic / silent emergency alarm dispatched in realtime to central",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "driverId": { "type": "string", "maxLength": 128 },
+        "driverName": { "type": "string", "maxLength": 128 },
+        "driverPhone": { "type": "string", "maxLength": 32 },
+        "status": { "type": "string", "enum": ["active", "resolved"] },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "driverId", "status", "createdAt"]
     },
     "DriverApplication": {
       "title": "DriverApplication",
@@ -153,13 +198,25 @@
       "schema": "Trip",
       "description": "Taxi ride bookings and dispatch queue"
     },
+    "/orders/{orderId}": {
+      "schema": "Trip",
+      "description": "Canonical taxi ride orders alias"
+    },
     "/drivers/{driverId}": {
       "schema": "Driver",
       "description": "Fleet drivers and availability"
     },
+    "/vehicles/{vehicleId}": {
+      "schema": "Vehicle",
+      "description": "Official Aron Taxi luxury fleet vehicles"
+    },
     "/driver_applications/{applicationId}": {
       "schema": "DriverApplication",
       "description": "Submitted driver registration applications waiting for admin approval"
+    },
+    "/emergency_alerts/{alertId}": {
+      "schema": "EmergencyAlert",
+      "description": "Emergency alerts and silent panic dispatches"
     },
     "/pricing/{configId}": {
       "schema": "PricingConfig",

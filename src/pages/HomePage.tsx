@@ -3,9 +3,9 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
 import { OFFICIAL_ASSETS } from '../constants/assets';
-import { searchAddresses, GeocodeResult } from '../services/osrm';
+import { searchAddresses, getUserCurrentLocation, GeocodeResult } from '../services/osrm';
 import { useTrips } from '../context/TripContext';
-import { MapPin, Navigation, ArrowRight, Shield, Clock, Plane, Calendar, CreditCard, Sparkles, Car, AlertCircle } from 'lucide-react';
+import { MapPin, Navigation, ArrowRight, Shield, Clock, Plane, Calendar, CreditCard, Sparkles, Car, AlertCircle, Loader2, LocateFixed } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
   const navigate = useNavigate();
@@ -13,12 +13,31 @@ export const HomePage: React.FC = () => {
 
   const [fromQuery, setFromQuery] = useState('');
   const [toQuery, setToQuery] = useState('');
+  const [locatingUser, setLocatingUser] = useState(false);
   
   const [fromSuggestions, setFromSuggestions] = useState<GeocodeResult[]>([]);
   const [toSuggestions, setToSuggestions] = useState<GeocodeResult[]>([]);
 
   const [selectedFrom, setSelectedFrom] = useState<GeocodeResult | null>(null);
   const [selectedTo, setSelectedTo] = useState<GeocodeResult | null>(null);
+
+  const handleUseCurrentLocation = async () => {
+    setLocatingUser(true);
+    try {
+      const loc = await getUserCurrentLocation();
+      setFromQuery(loc.address);
+      setSelectedFrom({
+        address: loc.address,
+        lat: loc.lat,
+        lng: loc.lng,
+      });
+      setFromSuggestions([]);
+    } catch (err: any) {
+      console.warn('Geolocation lookup notice:', err?.message);
+    } finally {
+      setLocatingUser(false);
+    }
+  };
 
   // Calculate live available drivers
   const busyDriverIds = new Set(
@@ -184,19 +203,51 @@ export const HomePage: React.FC = () => {
                 
                 {/* FROM FIELD */}
                 <div className="relative">
-                  <label className="block text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-1">
-                    FRA
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+                      FRA (Hentested)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleUseCurrentLocation}
+                      disabled={locatingUser}
+                      className="inline-flex items-center gap-1.5 text-[10px] font-bold text-[#D4AF37] hover:text-[#F5F2ED] transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {locatingUser ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin text-[#D4AF37]" />
+                          <span>Finner din posisjon...</span>
+                        </>
+                      ) : (
+                        <>
+                          <LocateFixed className="w-3 h-3 text-[#D4AF37]" />
+                          <span>Bruk min posisjon</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                   <div className="relative flex items-center">
                     <MapPin className="w-4 h-4 text-[#D4AF37] absolute left-3.5 pointer-events-none" />
                     <input
                       type="text"
-                      placeholder="Hentested, adresse eller sted"
+                      placeholder={locatingUser ? "Finner din posisjon..." : "Hentested, adresse eller sted"}
                       value={fromQuery}
                       onChange={(e) => handleFromSearch(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 bg-[#0D121D] border border-white/10 rounded-xl text-sm font-medium text-[#F5F2ED] placeholder-slate-500 focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all"
+                      className="w-full pl-10 pr-10 py-3 bg-[#0D121D] border border-white/10 rounded-xl text-sm font-medium text-[#F5F2ED] placeholder-slate-500 focus:outline-none focus:border-[#D4AF37] focus:ring-1 focus:ring-[#D4AF37] transition-all"
                       required
                     />
+                    <button
+                      type="button"
+                      onClick={handleUseCurrentLocation}
+                      title="Sett til min nåværende posisjon"
+                      className="absolute right-2.5 p-1.5 rounded-lg bg-white/5 hover:bg-[#D4AF37]/20 text-slate-400 hover:text-[#D4AF37] transition-colors cursor-pointer"
+                    >
+                      {locatingUser ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-[#D4AF37]" />
+                      ) : (
+                        <LocateFixed className="w-4 h-4 text-[#D4AF37]" />
+                      )}
+                    </button>
                   </div>
 
                   {fromSuggestions.length > 0 && (

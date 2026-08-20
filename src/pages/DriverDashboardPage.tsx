@@ -208,7 +208,7 @@ export const DriverDashboardPage: React.FC = () => {
       'pending_payment'
     ];
     if (terminalStatuses.includes(t.status)) return false;
-    if (t.paymentStatus === 'payment_failed' || t.paymentStatus === 'cancelled') return false;
+    if (t.paymentStatus === 'pending_payment' || t.paymentStatus === 'payment_failed' || t.paymentStatus === 'cancelled') return false;
 
     // If driver already declined or rejected this order, never show again
     if (t.declinedBy === driverId) return false;
