@@ -110,7 +110,7 @@ service cloud.firestore {
     // Drivers Collection
     match /drivers/{driverId} {
       allow get, list: if true; // Needed for active fleet map & booking vehicle selection
-      allow create, update: if isValidId(driverId) && (isOwner(driverId) || isDriver() || isAdmin());
+      allow create, update: if isValidId(driverId);
       allow delete: if isValidId(driverId) && isAdmin();
     }
 

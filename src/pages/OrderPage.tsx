@@ -697,11 +697,11 @@ export const OrderPage: React.FC = () => {
             <div className="flex items-center gap-3">
               <Loader2 className="w-5 h-5 text-[#D4AF37] animate-spin" />
               <div>
-                <h4 className="text-xs font-black text-white uppercase tracking-wider">Verifiserer betaling med Stripe...</h4>
-                <p className="text-[11px] text-slate-400">Bekrefter autorisasjon og klargjør sjåførutsending.</p>
+                <h4 className="text-xs font-black text-white uppercase tracking-wider">Verifiserer autorisasjon hos Nets...</h4>
+                <p className="text-[11px] text-slate-400">Bekrefter sikker betaling og klargjør sjåførutsending.</p>
               </div>
             </div>
-            <span className="text-xs font-mono text-[#D4AF37] font-bold">Stripe Checkout</span>
+            <span className="text-xs font-mono text-[#D4AF37] font-bold">Nets Easy Checkout</span>
           </div>
         )}
 

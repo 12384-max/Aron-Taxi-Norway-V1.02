@@ -1042,22 +1042,42 @@ export const TripProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const toggleDriverOnline = async (driverId: string, isOnline?: boolean) => {
     let targetOnline = false;
-    const updated = drivers.map((d) => {
-      if (d.id === driverId) {
+    let found = false;
+
+    let updated = drivers.map((d) => {
+      if (d.id === driverId || (d.email && d.email.toLowerCase() === driverId.toLowerCase())) {
+        found = true;
         targetOnline = isOnline !== undefined ? isOnline : !d.isOnline;
         return { ...d, isOnline: targetOnline };
       }
       return d;
     });
+
+    if (!found) {
+      const fallback = INITIAL_DRIVERS.find(
+        (d) => d.id === driverId || (d.email && d.email.toLowerCase() === driverId.toLowerCase())
+      ) || INITIAL_DRIVERS[0];
+      targetOnline = isOnline !== undefined ? isOnline : !fallback.isOnline;
+      const newDriverRecord = {
+        ...fallback,
+        id: driverId,
+        isOnline: targetOnline
+      };
+      updated = [...updated, newDriverRecord];
+    }
+
     saveDrivers(updated);
 
     try {
-      const updatedDriver = updated.find((d) => d.id === driverId);
+      const updatedDriver = updated.find(
+        (d) => d.id === driverId || (d.email && d.email.toLowerCase() === driverId.toLowerCase())
+      );
       if (updatedDriver) {
-        await setDoc(doc(db, 'drivers', driverId), removeUndefinedFields(updatedDriver), { merge: true });
+        await setDoc(doc(db, 'drivers', updatedDriver.id), removeUndefinedFields(updatedDriver), { merge: true });
+        console.log(`✅ Sjåfør ${updatedDriver.name} (${updatedDriver.id}) status oppdatert til: ${targetOnline ? 'ONLINE' : 'OFFLINE'}`);
       }
     } catch (err) {
-      console.log('Driver status cloud sync note:', err);
+      console.warn('Driver status cloud sync note:', err);
     }
   };
 
